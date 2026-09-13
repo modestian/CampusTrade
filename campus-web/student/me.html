@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>个人中心</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app">
+    <!-- 头部资料卡 -->
+    <div style="background: linear-gradient(135deg, var(--primary), #FF9A9A); padding: 30px 18px 50px;">
+        <div style="display:flex;align-items:center;color:#fff;">
+            <div class="avatar large" :style="colorStyle(user.avatarColor)"
+                 style="border:3px solid rgba(255,255,255,.6);">
+                {{ firstChars(user.nickname) }}
+            </div>
+            <div style="margin-left:14px;">
+                <div style="font-size:18px;font-weight:600;">{{ user.nickname }}</div>
+                <div style="font-size:12px;opacity:.9;margin-top:4px;">学号 {{ user.username }} · {{ user.campus || '未设置校区' }}</div>
+                <div style="font-size:12px;opacity:.9;margin-top:4px;">信用分 {{ user.credit }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷入口 -->
+    <div class="card" style="margin-top:-30px;display:flex;text-align:center;">
+        <div style="flex:1;cursor:pointer;" @click="view = 'collects'">
+            <div style="font-size:20px;">⭐</div>
+            <div style="font-size:12px;margin-top:4px;">我的收藏</div>
+        </div>
+        <div style="flex:1;cursor:pointer;" @click="view = 'follows'">
+            <div style="font-size:20px;">👥</div>
+            <div style="font-size:12px;margin-top:4px;">我的关注</div>
+        </div>
+        <div style="flex:1;cursor:pointer;" @click="location.href='/student/my-products.html'">
+            <div style="font-size:20px;">🗂️</div>
+            <div style="font-size:12px;margin-top:4px;">卖家中心</div>
+        </div>
+        <div style="flex:1;cursor:pointer;" @click="chatEntry">
+            <div style="font-size:20px;">💬</div>
+            <div style="font-size:12px;margin-top:4px;">消息</div>
+        </div>
+    </div>
+
+    <!-- 我的收藏 -->
+    <div v-if="view === 'collects'">
+        <div class="section-title">我的收藏</div>
+        <div class="product-grid">
+            <div v-for="p in collects" :key="p.id" class="product-card"
+                 @click="location.href='/student/product-detail.html?id=' + p.id">
+                <div class="product-cover" :style="colorStyle(p.coverColor)">{{ firstChars(p.title, 2) }}</div>
+                <div class="product-info">
+                    <div class="title">{{ p.title }}</div>
+                    <div class="price-row"><span class="price">{{ p.price }}</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="empty" v-if="!collects.length">还没有收藏的商品</div>
+    </div>
+
+    <!-- 我的关注 -->
+    <div v-if="view === 'follows'">
+        <div class="section-title">我的关注</div>
+        <div v-for="u in follows" :key="u.id" class="row-line" style="cursor:default;">
+            <div class="avatar" :style="colorStyle(u.avatarColor)">{{ firstChars(u.nickname) }}</div>
+            <div class="row-main" style="margin-left:10px;">
+                <div class="txt-main">{{ u.nickname }}</div>
+                <div class="txt-sub">{{ u.campus || '校园用户' }} · 信用 {{ u.credit }}</div>
+            </div>
+            <button class="btn small plain" @click.stop="unfollow(u)">取关</button>
+        </div>
+        <div class="empty" v-if="!follows.length">还没有关注的同学</div>
+    </div>
+
+    <!-- 通用菜单 -->
+    <div class="card" style="padding:0;overflow:hidden;">
+        <div class="row-line" @click="showEdit = true">
+            <span>✏️</span><div class="row-main" style="margin-left:10px;">编辑资料</div><span class="arrow">›</span>
+        </div>
+        <div class="row-line" @click="showNotice = true">
+            <span>📢</span><div class="row-main" style="margin-left:10px;">平台公告</div><span class="arrow">›</span>
+        </div>
+        <div class="row-line" @click="showPwd = true" style="border-bottom:none;">
+            <span>🔒</span><div class="row-main" style="margin-left:10px;">修改密码</div><span class="arrow">›</span>
+        </div>
+    </div>
+
+    <div style="padding:10px 14px 20px;">
+        <button class="btn block plain" @click="logout()">退出登录</button>
+    </div>
+
+    <!-- 编辑资料弹窗 -->
+    <div v-if="showEdit" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:12px;padding:18px;width:86%;max-width:400px;">
+            <div style="font-weight:600;margin-bottom:12px;">编辑资料</div>
+            <div class="form-item">
+                <label>昵称</label>
+                <input class="form-input" v-model="editForm.nickname">
+            </div>
+            <div class="form-item">
+                <label>头像色块</label>
+                <div class="color-picker">
+                    <div v-for="c in colors" :key="c" class="color-dot"
+                         :class="{active: editForm.avatarColor === c}"
+                         :style="{backgroundColor: c}" @click="editForm.avatarColor = c"></div>
+                </div>
+            </div>
+            <div class="form-item">
+                <label>手机号</label>
+                <input class="form-input" v-model="editForm.phone" placeholder="11位手机号">
+            </div>
+            <div class="form-item">
+                <label>常用校区/楼栋</label>
+                <input class="form-input" v-model="editForm.campus" placeholder="如：梅园1栋">
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn plain" style="flex:1;" @click="showEdit = false">取消</button>
+                <button class="btn" style="flex:1;" @click="saveProfile">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 公告弹窗 -->
+    <div v-if="showNotice" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:12px;padding:18px;width:86%;max-width:400px;max-height:70vh;overflow-y:auto;">
+            <div style="font-weight:600;margin-bottom:12px;">平台公告</div>
+            <div v-for="n in notices" :key="n.id" style="padding:10px 0;border-bottom:1px solid var(--border);">
+                <div style="font-size:14px;font-weight:600;">{{ n.title }}</div>
+                <div style="font-size:12px;color:var(--text-light);margin-top:5px;line-height:1.6;">{{ n.content }}</div>
+                <div style="font-size:11px;color:#C8C9CC;margin-top:5px;">{{ fmtTime(n.createTime) }}</div>
+            </div>
+            <div class="empty" v-if="!notices.length" style="padding:20px 0;">暂无公告</div>
+            <button class="btn block" style="margin-top:12px;" @click="showNotice = false">知道了</button>
+        </div>
+    </div>
+
+    <!-- 修改密码弹窗 -->
+    <div v-if="showPwd" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:12px;padding:18px;width:86%;max-width:400px;">
+            <div style="font-weight:600;margin-bottom:12px;">修改密码</div>
+            <div class="form-item">
+                <label>原密码</label>
+                <input class="form-input" type="password" v-model="pwdForm.oldPassword">
+            </div>
+            <div class="form-item">
+                <label>新密码（6~20位）</label>
+                <input class="form-input" type="password" v-model="pwdForm.newPassword">
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn plain" style="flex:1;" @click="showPwd = false">取消</button>
+                <button class="btn" style="flex:1;" @click="savePwd">确认修改</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="tabbar">
+        <a href="/student/index.html"><span class="icon">🏠</span>首页</a>
+        <a href="/student/feed.html"><span class="icon">✨</span>动态</a>
+        <a href="/student/publish.html"><span class="icon">➕</span>发布</a>
+        <a href="/student/orders.html"><span class="icon">📋</span>订单</a>
+        <a href="/student/me.html" class="active"><span class="icon">👤</span>我的</a>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    if (requireLogin()) {
+        new Vue({
+            el: '#app',
+            data: {
+                user: {},
+                view: '',
+                collects: [],
+                follows: [],
+                notices: [],
+                colors: ['#FF7675', '#74B9FF', '#55EFC4', '#A29BFE', '#FAB1A0', '#FFEAA7', '#81ECEC', '#6C5CE7'],
+                showEdit: false, showNotice: false, showPwd: false,
+                editForm: { nickname: '', avatarColor: '', phone: '', campus: '' },
+                pwdForm: { oldPassword: '', newPassword: '' }
+            },
+            created() {
+                this.loadUser();
+                api.get('/student/my/collects', { params: { page: 1, pageSize: 50 } })
+                    .then(data => this.collects = (data && data.records) || []);
+                api.get('/student/my/follows', { params: { page: 1, pageSize: 50 } })
+                    .then(data => this.follows = (data && data.records) || []);
+            },
+            methods: {
+                loadUser() {
+                    api.get('/student/me').then(data => {
+                        this.user = data;
+                        this.editForm = {
+                            nickname: data.nickname, avatarColor: data.avatarColor,
+                            phone: data.phone, campus: data.campus
+                        };
+                    });
+                },
+                saveProfile() {
+                    api.put('/student/me', this.editForm).then(() => {
+                        this.showEdit = false;
+                        alert('保存成功');
+                        this.loadUser();
+                    });
+                },
+                savePwd() {
+                    api.put('/student/password', this.pwdForm).then(() => {
+                        this.showPwd = false;
+                        alert('密码已修改，请重新登录');
+                        setTimeout(() => logout(), 800);
+                    });
+                },
+                unfollow(u) {
+                    api.delete('/student/follows/' + u.id).then(() => {
+                        this.follows = this.follows.filter(x => x.id !== u.id);
+                    });
+                },
+                chatEntry() { location.href = '/student/chat.html'; }
+            },
+            watch: {
+                showNotice(v) {
+                    if (v && !this.notices.length) {
+                        api.get('/student/notices', { params: { page: 1, pageSize: 20 } })
+                            .then(data => this.notices = (data && data.records) || []);
+                    }
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

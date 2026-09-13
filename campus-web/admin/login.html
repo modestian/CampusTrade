@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>管理端登录 - 校园二手交易平台</title>
+    <link rel="stylesheet" href="/campus-static/lib/element.css">
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+    <style>
+        body { background: linear-gradient(135deg, #6C5CE7, #A29BFE); height: 100vh; }
+        .login-wrap {
+            width: 380px; margin: 0 auto; padding-top: 16vh;
+        }
+        .login-card {
+            background: #fff; border-radius: 14px; padding: 34px 30px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, .2);
+        }
+        .login-title { text-align: center; margin-bottom: 26px; }
+        .login-title h2 { font-size: 20px; color: #2D3436; }
+        .login-title p { color: #8E9299; font-size: 12px; margin-top: 6px; }
+    </style>
+</head>
+<body>
+<div id="app" class="login-wrap">
+    <div class="login-card">
+        <div class="login-title">
+            <h2>校园二手交易平台 · 管理端</h2>
+            <p>管理员后台（独立账号体系）</p>
+        </div>
+        <el-form>
+            <el-form-item>
+                <el-input v-model="form.username" placeholder="管理员账号" prefix-icon="el-icon-user"></el-input>
+            </el-form-item>
+            <el-form-item>
+                <el-input v-model="form.password" type="password" placeholder="密码" prefix-icon="el-icon-lock"
+                          @keyup.enter.native="submit"></el-input>
+            </el-form-item>
+            <el-button type="primary" style="width:100%;" :loading="loading" @click="submit">登 录</el-button>
+        </el-form>
+        <div style="text-align:center;margin-top:16px;font-size:12px;color:#8E9299;">
+            测试账号：admin / 123456
+        </div>
+    </div>
+</div>
+
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/lib/element.js"></script>
+<script src="/campus-static/lib/axios.min.js"></script>
+<script>
+    const ADMIN_TOKEN_KEY = 'campus_admin_token';
+    const ADMIN_KEY = 'campus_admin';
+
+    new Vue({
+        el: '#app',
+        data: {
+            loading: false,
+            form: { username: 'admin', password: '' }
+        },
+        methods: {
+            submit() {
+                if (!this.form.username || !this.form.password) {
+                    this.$message.warning('请输入账号和密码');
+                    return;
+                }
+                this.loading = true;
+                axios.post('/admin/login', this.form).then(resp => {
+                    const r = resp.data;
+                    if (r.code === 1) {
+                        localStorage.setItem(ADMIN_TOKEN_KEY, r.data.token);
+                        localStorage.setItem(ADMIN_KEY, JSON.stringify(r.data.admin));
+                        location.href = '/admin-ui/index.html';
+                    } else {
+                        this.$message.error(r.msg || '登录失败');
+                    }
+                }).catch(() => this.$message.error('网络异常')).finally(() => this.loading = false);
+            }
+        }
+    });
+</script>
+</body>
+</html>

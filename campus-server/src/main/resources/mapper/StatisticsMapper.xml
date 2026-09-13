@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.mapper.StatisticsMapper">
+
+    <!-- 每日成交额（状态 2/3/4：已支付未退款） -->
+    <select id="selectDailyTurnover" resultType="java.util.Map">
+        SELECT DATE_FORMAT(create_time, '%Y-%m-%d') AS date,
+               IFNULL(SUM(amount), 0) AS turnover
+        FROM tb_order
+        WHERE status IN (2, 3, 4)
+          AND create_time &gt;= #{begin} AND create_time &lt;= #{end}
+        GROUP BY date
+        ORDER BY date
+    </select>
+
+    <!-- 每日订单量与有效订单量 -->
+    <select id="selectDailyOrderStats" resultType="java.util.Map">
+        SELECT DATE_FORMAT(create_time, '%Y-%m-%d') AS date,
+               COUNT(*) AS orderCount,
+               SUM(CASE WHEN status IN (2, 3, 4, 6, 7) THEN 1 ELSE 0 END) AS validOrderCount
+        FROM tb_order
+        WHERE create_time &gt;= #{begin} AND create_time &lt;= #{end}
+        GROUP BY date
+        ORDER BY date
+    </select>
+
+    <!-- 每日新增用户 -->
+    <select id="selectDailyNewUsers" resultType="java.util.Map">
+        SELECT DATE_FORMAT(create_time, '%Y-%m-%d') AS date,
+               COUNT(*) AS newUsers
+        FROM tb_user
+        WHERE create_time &gt;= #{begin} AND create_time &lt;= #{end}
+        GROUP BY date
+        ORDER BY date
+    </select>
+
+    <!-- 热销商品 Top（按成交量） -->
+    <select id="selectTopProducts" resultType="com.campus.pojo.vo.TopProductVO">
+        SELECT o.product_id AS productId,
+               p.title AS title,
+               p.cover_color AS coverColor,
+               COUNT(*) AS orderCount,
+               IFNULL(SUM(o.amount), 0) AS turnover
+        FROM tb_order o
+        LEFT JOIN tb_product p ON o.product_id = p.id
+        WHERE o.status IN (2, 3, 4)
+        GROUP BY o.product_id, p.title, p.cover_color
+        ORDER BY orderCount DESC, turnover DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

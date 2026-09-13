@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>消息</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="toast"></div>
+<div id="app" class="app" style="padding-bottom: 70px;">
+    <div class="navbar">
+        <span class="back" @click="backToList">‹</span>
+        {{ chatting ? (chatUser.nickname || '聊天中') : '消息' }}
+        <span v-if="chatting" class="nav-right" :style="{color: wsOnline ? '#fff' : '#FFEAA7'}">
+            {{ wsOnline ? '● 在线' : '○ 连接中' }}
+        </span>
+    </div>
+
+    <!-- 会话列表 -->
+    <template v-if="!chatting">
+        <div v-for="s in sessions" :key="s.userId" class="row-line" @click="openChat(s.userId, s.nickname)">
+            <div class="avatar" :style="colorStyle(s.avatarColor)">{{ firstChars(s.nickname) }}</div>
+            <div class="row-main" style="margin-left:10px;">
+                <div class="txt-main">{{ s.nickname }}</div>
+                <div class="txt-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ s.lastMessage }}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:11px;color:#C8C9CC;">{{ fmtTime(s.lastTime) }}</div>
+                <span v-if="s.unreadCount > 0" style="display:inline-block;background:var(--primary);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;margin-top:4px;">
+                    {{ s.unreadCount }}
+                </span>
+            </div>
+        </div>
+        <div class="empty" v-if="!sessions.length">
+            <span class="icon">💬</span>暂无消息，去商品详情页私聊卖家吧
+        </div>
+    </template>
+
+    <!-- 聊天窗口 -->
+    <template v-else>
+        <div class="chat-box">
+            <div v-for="msg in messages" :key="msg.id || msg.createTime"
+                 class="chat-msg" :class="{mine: msg.fromUserId === myId}">
+                <div class="avatar small" :style="colorStyle(msg.fromUserId === myId ? myAvatarColor : chatUser.avatarColor)">
+                    {{ firstChars(msg.fromUserId === myId ? myNickname : chatUser.nickname) }}
+                </div>
+                <div class="chat-bubble" style="margin:0 8px;">{{ msg.content }}</div>
+            </div>
+            <div class="empty" v-if="!messages.length" style="padding:30px 0;">打个招呼吧~</div>
+        </div>
+
+        <div class="chat-input-bar">
+            <input v-model="inputText" @keyup.enter="send" placeholder="输入消息...">
+            <button class="btn" @click="send">发送</button>
+        </div>
+    </template>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    if (requireLogin()) {
+        const vm = new Vue({
+            el: '#app',
+            data: {
+                sessions: [],
+                chatting: false,
+                chatUser: { userId: null, nickname: '', avatarColor: '' },
+                messages: [],
+                inputText: '',
+                ws: null,
+                wsOnline: false,
+                connected: false,
+                myId: currentUser().id,
+                myNickname: currentUser().nickname,
+                myAvatarColor: currentUser().avatarColor
+            },
+            created() {
+                this.loadSessions();
+                const params = new URLSearchParams(location.search);
+                const userId = params.get('userId');
+                if (userId) {
+                    this.openChat(Number(userId), params.get('nickname') || '');
+                }
+            },
+            methods: {
+                loadSessions() {
+                    api.get('/student/chat/sessions').then(data => this.sessions = data || []);
+                },
+                openChat(userId, nickname) {
+                    if (!userId) return;
+                    if (userId === this.myId) {
+                        this.showToast('不能给自己发消息');
+                        return;
+                    }
+                    this.chatting = true;
+                    this.chatUser = { userId, nickname: nickname || ('用户' + userId), avatarColor: '#A29BFE' };
+                    // 从会话列表补充信息
+                    const s = this.sessions.find(x => x.userId === userId);
+                    if (s) {
+                        this.chatUser = { userId, nickname: s.nickname, avatarColor: s.avatarColor };
+                    }
+                    this.loadHistory();
+                    this.connectWs();
+                    // 同步 URL：仅当当前 URL 尚未指向该用户时入栈
+                    // （不带 nickname 等附加参数时也算同一目标，避免历史堆积导致返回多次才生效）
+                    const cur = new URLSearchParams(location.search).get('userId');
+                    if (!cur || Number(cur) !== userId) {
+                        history.pushState({}, '', '/student/chat.html?userId=' + userId);
+                    }
+                },
+                backToList() {
+                    if (this.chatting) {
+                        if (document.referrer && document.referrer.indexOf(location.origin) === 0) {
+                            // 有站内来源：后退一步（外部进入回来源页；列表内进入则由 popstate 退出聊天视图）
+                            history.back();
+                        } else {
+                            // 直接打开无来源：退出聊天态回列表
+                            this.chatting = false;
+                            history.replaceState({}, '', '/student/chat.html');
+                            this.loadSessions();
+                        }
+                    } else {
+                        this.goBack('/student/index.html');
+                    }
+                },
+                loadHistory() {
+                    api.get('/student/chat/history/' + this.chatUser.userId, { params: { page: 1, pageSize: 100 } })
+                        .then(data => this.messages = ((data && data.records) || []).slice().reverse());
+                },
+                connectWs() {
+                    if (this.connected) return;
+                    const token = localStorage.getItem(TOKEN_KEY);
+                    const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/' + token;
+                    this.ws = new WebSocket(wsUrl);
+                    this.ws.onopen = () => { this.wsOnline = true; this.connected = true; };
+                    this.ws.onclose = () => {
+                        this.wsOnline = false;
+                        this.connected = false;
+                        // 断线重连
+                        setTimeout(() => { if (this.chatting) this.connectWs(); }, 3000);
+                    };
+                    this.ws.onmessage = (event) => {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'CHAT' && msg.data) {
+                            const d = msg.data;
+                            // 当前窗口消息（对方发来）
+                            if (this.chatting && (d.fromUserId === this.chatUser.userId || d.fromUserId === this.myId)) {
+                                this.messages.push(d);
+                                this.scrollBottom();
+                            } else if (d.fromUserId !== this.myId) {
+                                this.loadSessions();
+                            }
+                        } else if (['NEW_ORDER', 'ORDER_PAID', 'URGE', 'ORDER_CANCELED', 'ORDER_RECEIVED',
+                                    'REFUND_APPLY', 'REFUND_RESULT', 'ORDER_DELIVERED', 'AUDIT_RESULT', 'NOTICE'].includes(msg.type)) {
+                            // 订单类/系统类事件用轻提示
+                            this.showToast('🔔 ' + (typeof msg.data === 'string' ? msg.data : JSON.stringify(msg.data)));
+                        }
+                    };
+                },
+                send() {
+                    const text = this.inputText.trim();
+                    if (!text) return;
+                    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                        alert('连接已断开，正在重连…');
+                        this.connectWs();
+                        return;
+                    }
+                    this.ws.send(JSON.stringify({
+                        type: 'CHAT',
+                        receiverId: this.chatUser.userId,
+                        content: text
+                    }));
+                    // 本地回显
+                    this.messages.push({
+                        fromUserId: this.myId,
+                        toUserId: this.chatUser.userId,
+                        content: text,
+                        createTime: fmtTime(new Date().toISOString())
+                    });
+                    this.inputText = '';
+                    this.scrollBottom();
+                },
+                scrollBottom() {
+                    this.$nextTick(() => window.scrollTo(0, document.body.scrollHeight));
+                },
+                showToast(text) {
+                    let el = document.getElementById('toast');
+                    el.textContent = text;
+                    el.style.display = 'block';
+                    setTimeout(() => el.style.display = 'none', 3000);
+                }
+            }
+        });
+
+        /* 浏览器后退时（如从会话列表以 pushState 进入聊天），
+         * URL 回到无参数的列表页则退出聊天视图 */
+        window.addEventListener('popstate', () => {
+            const hasUser = new URLSearchParams(location.search).get('userId');
+            if (!hasUser && vm.chatting) {
+                vm.chatting = false;
+                vm.loadSessions();
+            }
+        });
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>卖家中心 - 我的商品</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app">
+    <div class="navbar"><span class="back" @click="goBack('/student/me.html')">‹ 返回</span>卖家中心</div>
+
+    <!-- 状态筛选 -->
+    <div style="display:flex;background:#fff;overflow-x:auto;font-size:13px;position:sticky;top:48px;z-index:99;">
+        <div v-for="tab in tabs" :key="tab.value === null ? 'all' : tab.value"
+             @click="changeTab(tab.value)"
+             :style="{padding:'12px 14px',whiteSpace:'nowrap',cursor:'pointer',
+                      color: status === tab.value ? 'var(--primary)' : 'var(--text-light)',
+                      fontWeight: status === tab.value ? '600' : 'normal',
+                      borderBottom: status === tab.value ? '2px solid var(--primary)' : '2px solid transparent'}">
+            {{ tab.name }}
+        </div>
+    </div>
+
+    <!-- 商品列表 -->
+    <div v-for="p in products" :key="p.id" class="card" style="display:flex;gap:10px;">
+        <div class="order-cover" :style="colorStyle(p.coverColor)" @click="goDetail(p.id)">
+            {{ firstChars(p.title, 2) }}
+        </div>
+        <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.title }}</div>
+            <div style="margin-top:6px;">
+                <span class="price">{{ p.price }}</span>
+                <span class="tag" style="margin-left:8px;"
+                      :class="{gray: p.status !== 1, green: p.status === 1, yellow: p.status === 0, purple: p.status === 2}">
+                    {{ p.statusText }}
+                </span>
+            </div>
+            <div style="color:var(--text-light);font-size:11px;margin-top:5px;">
+                👀 {{ p.viewCount }} · ⭐ {{ p.collectCount }} · 👍 {{ p.likeCount }}
+            </div>
+            <div v-if="p.status === 5 && p.auditRemark" style="color:#EA5455;font-size:12px;margin-top:5px;">
+                驳回原因：{{ p.auditRemark }}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;" v-if="p.status === 1 || p.status === 4 || p.status === 5 || p.status === 0">
+                <button class="btn small plain" @click="edit(p.id)">编辑</button>
+                <button class="btn small plain" v-if="p.status === 1" @click="changeStatus(p, 4)">下架</button>
+                <button class="btn small green" v-if="p.status === 4" @click="changeStatus(p, 1)">重新上架</button>
+                <button class="btn small danger" @click="remove(p)">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="empty" v-if="!loading && !products.length">
+        <span class="icon">🗂️</span>暂无商品
+        <div style="margin-top:14px;"><a class="btn" href="/student/publish.html">去发布</a></div>
+    </div>
+
+    <div class="tabbar">
+        <a href="/student/index.html"><span class="icon">🏠</span>首页</a>
+        <a href="/student/feed.html"><span class="icon">✨</span>动态</a>
+        <a href="/student/publish.html"><span class="icon">➕</span>发布</a>
+        <a href="/student/orders.html"><span class="icon">📋</span>订单</a>
+        <a href="/student/me.html" class="active"><span class="icon">👤</span>我的</a>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    if (requireLogin()) {
+        new Vue({
+            el: '#app',
+            data: {
+                tabs: [
+                    { name: '全部', value: null },
+                    { name: '待审核', value: 0 },
+                    { name: '在售', value: 1 },
+                    { name: '交易中', value: 2 },
+                    { name: '已售出', value: 3 },
+                    { name: '已下架', value: 4 },
+                    { name: '已驳回', value: 5 }
+                ],
+                status: null,
+                products: [],
+                loading: false
+            },
+            created() { this.load(); },
+            methods: {
+                load() {
+                    this.loading = true;
+                    api.get('/student/my/products', {
+                        params: { status: this.status === null ? undefined : this.status, page: 1, pageSize: 50 }
+                    }).then(data => this.products = (data && data.records) || [])
+                        .finally(() => this.loading = false);
+                },
+                changeTab(v) { this.status = v; this.load(); },
+                goDetail(id) { location.href = '/student/product-detail.html?id=' + id; },
+                edit(id) { location.href = '/student/publish.html?id=' + id; },
+                changeStatus(p, status) {
+                    api.put('/student/my/products/' + p.id + '/status', null, { params: { status } })
+                        .then(() => { alert('操作成功'); this.load(); });
+                },
+                remove(p) {
+                    if (!confirm('确定删除《' + p.title + '》吗？')) return;
+                    api.delete('/student/my/products/' + p.id).then(() => { alert('已删除'); this.load(); });
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

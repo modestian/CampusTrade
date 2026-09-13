@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.mapper.OrderMapper">
+
+    <!-- 订单分页（联查商品/买家/卖家；买卖双方与管理端共用） -->
+    <select id="pageOrders" resultType="com.campus.pojo.vo.OrderVO">
+        SELECT o.id, o.order_no, o.product_id, o.buyer_id, o.seller_id, o.amount, o.status,
+               o.delivery_type, o.remark, o.cancel_reason, o.refund_reason, o.refund_reject_reason,
+               o.pay_time, o.deliver_time, o.receive_time, o.cancel_time, o.create_time,
+               p.title AS product_title, p.cover_color AS product_cover_color,
+               b.nickname AS buyer_nickname, b.avatar_color AS buyer_avatar_color,
+               s.nickname AS seller_nickname, s.avatar_color AS seller_avatar_color,
+               (SELECT COUNT(*) FROM tb_review rv WHERE rv.order_id = o.id) > 0 AS reviewed
+        FROM tb_order o
+        LEFT JOIN tb_product p ON o.product_id = p.id
+        LEFT JOIN tb_user b ON o.buyer_id = b.id
+        LEFT JOIN tb_user s ON o.seller_id = s.id
+        <where>
+            <if test="buyerId != null">AND o.buyer_id = #{buyerId}</if>
+            <if test="sellerId != null">AND o.seller_id = #{sellerId}</if>
+            <if test="status != null">AND o.status = #{status}</if>
+            <if test="keyword != null and keyword != ''">
+                AND (o.order_no LIKE CONCAT('%', #{keyword}, '%') OR p.title LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="beginTime != null and beginTime != ''">AND o.create_time &gt;= #{beginTime}</if>
+            <if test="endTime != null and endTime != ''">AND o.create_time &lt;= #{endTime}</if>
+        </where>
+        ORDER BY o.create_time DESC, o.id DESC
+    </select>
+
+</mapper>

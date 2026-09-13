@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.mapper.ProductMapper">
+
+    <!-- 商品分页查询（联查分类名、卖家信息） -->
+    <select id="pageProducts" resultType="com.campus.pojo.vo.ProductVO">
+        SELECT p.id, p.seller_id, p.category_id, p.title, p.cover_color, p.price, p.original_price,
+               p.condition_level, p.delivery_type, p.campus, p.view_count, p.collect_count, p.like_count,
+               p.status, p.audit_remark, p.create_time,
+               c.name AS category_name,
+               u.nickname AS seller_nickname, u.avatar_color AS seller_avatar_color
+        FROM tb_product p
+        LEFT JOIN tb_category c ON p.category_id = c.id
+        LEFT JOIN tb_user u ON p.seller_id = u.id
+        <where>
+            <if test="categoryId != null">AND p.category_id = #{categoryId}</if>
+            <if test="sellerId != null">AND p.seller_id = #{sellerId}</if>
+            <if test="status != null">AND p.status = #{status}</if>
+            <if test="keyword != null and keyword != ''">
+                AND (p.title LIKE CONCAT('%', #{keyword}, '%') OR p.description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        <choose>
+            <when test="sort == 'price_asc'">ORDER BY p.price ASC</when>
+            <when test="sort == 'price_desc'">ORDER BY p.price DESC</when>
+            <when test="sort == 'hot'">ORDER BY p.view_count DESC, p.like_count DESC</when>
+            <otherwise>ORDER BY p.create_time DESC, p.id DESC</otherwise>
+        </choose>
+    </select>
+
+    <!-- 商品详情 -->
+    <select id="selectProductDetail" resultType="com.campus.pojo.vo.ProductDetailVO">
+        SELECT p.id, p.seller_id, p.category_id, p.title, p.description, p.cover_color, p.price,
+               p.original_price, p.condition_level, p.delivery_type, p.campus,
+               p.view_count, p.collect_count, p.like_count, p.status, p.audit_remark, p.create_time,
+               c.name AS category_name,
+               u.nickname AS seller_nickname, u.avatar_color AS seller_avatar_color, u.credit AS seller_credit
+        FROM tb_product p
+        LEFT JOIN tb_category c ON p.category_id = c.id
+        LEFT JOIN tb_user u ON p.seller_id = u.id
+        WHERE p.id = #{id}
+    </select>
+
+    <!-- 按 ID 批量查询 -->
+    <select id="selectByIds" resultType="com.campus.pojo.vo.ProductVO">
+        SELECT p.id, p.seller_id, p.category_id, p.title, p.cover_color, p.price, p.original_price,
+               p.condition_level, p.delivery_type, p.campus, p.view_count, p.collect_count, p.like_count,
+               p.status, p.create_time,
+               c.name AS category_name,
+               u.nickname AS seller_nickname, u.avatar_color AS seller_avatar_color
+        FROM tb_product p
+        LEFT JOIN tb_category c ON p.category_id = c.id
+        LEFT JOIN tb_user u ON p.seller_id = u.id
+        WHERE p.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- 卖家主页：在售商品 -->
+    <select id="selectSellerOnSaleProducts" resultType="com.campus.pojo.vo.ProductVO">
+        SELECT p.id, p.seller_id, p.category_id, p.title, p.cover_color, p.price, p.original_price,
+               p.condition_level, p.delivery_type, p.campus, p.view_count, p.collect_count, p.like_count,
+               p.status, p.create_time
+        FROM tb_product p
+        WHERE p.seller_id = #{sellerId} AND p.status = 1
+        ORDER BY p.create_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 防超卖核心：在售 -> 交易中（CAS） -->
+    <update id="casOnSaleToTrading">
+        UPDATE tb_product SET status = 2 WHERE id = #{id} AND status = 1
+    </update>
+
+    <!-- 交易中 -> 在售（取消/退款回滚） -->
+    <update id="casTradingToOnSale">
+        UPDATE tb_product SET status = 1 WHERE id = #{id} AND status = 2
+    </update>
+
+    <!-- 交易中 -> 已售出（订单完成） -->
+    <update id="casTradingToSold">
+        UPDATE tb_product SET status = 3 WHERE id = #{id} AND status = 2
+    </update>
+
+</mapper>

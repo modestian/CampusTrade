@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>关注动态</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app">
+    <div class="navbar">关注动态
+        <span class="nav-right" @click="location.href='/student/index.html'">逛逛首页 ›</span>
+    </div>
+
+    <div v-for="p in products" :key="p.id" class="card"
+         @click="goDetail(p.id)" style="display:flex;gap:10px;cursor:pointer;">
+        <div class="order-cover" :style="colorStyle(p.coverColor)">{{ firstChars(p.title, 2) }}</div>
+        <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;">{{ p.title }}</div>
+            <div style="margin-top:6px;">
+                <span class="price">{{ p.price }}</span>
+                <span class="tag" style="margin-left:8px;">{{ p.conditionText }}</span>
+            </div>
+            <div style="color:var(--text-light);font-size:11px;margin-top:6px;">
+                {{ p.sellerNickname }} · {{ fmtTime(p.createTime) }}
+            </div>
+        </div>
+    </div>
+
+    <div class="empty" v-if="!loading && !products.length">
+        <span class="icon">✨</span>
+        还没有动态，去关注几个卖家吧
+        <div style="margin-top:14px;"><a class="btn" href="/student/index.html">去逛逛</a></div>
+    </div>
+    <div class="empty" v-if="products.length" style="padding:16px 0;">
+        <button class="btn plain" @click="loadMore" v-if="hasMore">加载更多</button>
+        <span v-else>— 没有更多了 —</span>
+    </div>
+
+    <div class="tabbar">
+        <a href="/student/index.html"><span class="icon">🏠</span>首页</a>
+        <a href="/student/feed.html" class="active"><span class="icon">✨</span>动态</a>
+        <a href="/student/publish.html"><span class="icon">➕</span>发布</a>
+        <a href="/student/orders.html"><span class="icon">📋</span>订单</a>
+        <a href="/student/me.html"><span class="icon">👤</span>我的</a>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    if (requireLogin()) {
+        new Vue({
+            el: '#app',
+            data: {
+                products: [],
+                lastTime: null,
+                offset: null,
+                hasMore: true,
+                loading: false
+            },
+            created() { this.load(); },
+            methods: {
+                load() {
+                    if (this.loading || !this.hasMore) return;
+                    this.loading = true;
+                    api.get('/student/feed', {
+                        params: { lastTime: this.lastTime || undefined, offset: this.offset || undefined }
+                    }).then(data => {
+                        const list = data.products || [];
+                        this.products = this.products.concat(list);
+                        this.lastTime = data.minTime;
+                        this.offset = data.offset;
+                        if (!list.length) this.hasMore = false;
+                    }).finally(() => this.loading = false);
+                },
+                loadMore() { this.load(); },
+                goDetail(id) { location.href = '/student/product-detail.html?id=' + id; }
+            }
+        });
+    }
+</script>
+</body>
+</html>

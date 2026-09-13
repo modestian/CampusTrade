@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>管理后台 - 校园二手交易平台</title>
+    <link rel="stylesheet" href="/campus-static/lib/element.css">
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+    <style>
+        html, body { height: 100%; }
+        #app, .el-container { height: 100%; }
+        .el-aside { background: #2D3436; color: #fff; width: 200px !important; }
+        .logo-area { height: 60px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+        .logo-area .dot { width: 10px; height: 10px; border-radius: 50%; background: #FF7675; margin-right: 8px; }
+        .el-menu { background: transparent; border-right: none; }
+        .el-menu-item { color: #B2BEC3; }
+        .el-menu-item.is-active { color: #fff; background: rgba(255, 255, 255, .12); }
+        .el-menu-item:hover { background: rgba(255, 255, 255, .06); }
+        .top-header {
+            background: #fff; height: 60px; display: flex; align-items: center;
+            padding: 0 20px; box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
+        }
+        .top-header .title { font-size: 16px; font-weight: 600; }
+        .top-header .admin-info { margin-left: auto; display: flex; align-items: center; font-size: 13px; }
+        .main { background: #F5F6FA; padding: 16px; overflow-y: auto; }
+        .stat-card {
+            background: #fff; border-radius: 10px; padding: 18px;
+            text-align: center; box-shadow: 0 1px 4px rgba(0, 0, 0, .04);
+        }
+        .stat-card .num { font-size: 26px; font-weight: 700; color: #6C5CE7; }
+        .stat-card .num.warn { color: #E1A200; }
+        .stat-card .num.danger { color: #EA5455; }
+        .stat-card .label { color: #8E9299; font-size: 12px; margin-top: 6px; }
+        .panel { background: #fff; border-radius: 10px; padding: 16px; margin-top: 16px; }
+        .panel h3 { font-size: 15px; margin-bottom: 14px; }
+        .bar-row { display: flex; align-items: center; margin-bottom: 10px; font-size: 12px; }
+        .bar-label { width: 90px; color: #8E9299; text-align: right; margin-right: 10px; flex-shrink: 0; }
+        .bar-track { flex: 1; background: #F1F2F6; border-radius: 6px; height: 18px; overflow: hidden; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, #A29BFE, #6C5CE7); border-radius: 6px; min-width: 2px; }
+        .bar-value { width: 90px; margin-left: 10px; color: #2D3436; flex-shrink: 0; }
+        .cover-mini {
+            width: 40px; height: 40px; border-radius: 8px; display: inline-flex;
+            align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px;
+            vertical-align: middle; margin-right: 8px;
+        }
+        .status-tag { padding: 1px 8px; border-radius: 8px; font-size: 12px; }
+        .st-0 { background: #FFF7E6; color: #E1A200; }
+        .st-1 { background: #E8F8F2; color: #00B894; }
+        .st-2 { background: #F0EDFF; color: #6C5CE7; }
+        .st-3 { background: #F1F2F6; color: #8E9299; }
+        .st-4 { background: #F1F2F6; color: #8E9299; }
+        .st-5 { background: #FFECEC; color: #EA5455; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <el-container>
+        <el-aside width="200px">
+            <div class="logo-area"><span class="dot"></span>校园二手 · 管理端</div>
+            <el-menu :default-active="view" @select="switchView">
+                <el-menu-item index="dashboard">📊 工作台</el-menu-item>
+                <el-menu-item index="audit">📝 商品审核</el-menu-item>
+                <el-menu-item index="products">📦 商品管理</el-menu-item>
+                <el-menu-item index="categories">🗂️ 分类管理</el-menu-item>
+                <el-menu-item index="orders">📋 订单管理</el-menu-item>
+                <el-menu-item index="users">👥 学生管理</el-menu-item>
+                <el-menu-item index="reports">🚨 举报处理</el-menu-item>
+                <el-menu-item index="notices">📢 公告管理</el-menu-item>
+                <el-menu-item index="statistics">📈 数据统计</el-menu-item>
+            </el-menu>
+        </el-aside>
+
+        <el-container>
+            <div class="top-header">
+                <span class="title">{{ viewTitle }}</span>
+                <div class="admin-info">
+                    <div class="avatar small" :style="{backgroundColor: admin.avatarColor || '#636E72'}">{{ (admin.name || '管')[0] }}</div>
+                    <span style="margin-left:8px;">{{ admin.name }}</span>
+                    <el-button type="text" style="margin-left:16px;" @click="logout">退出登录</el-button>
+                </div>
+            </div>
+
+            <el-main class="main">
+                <!-- ============ 工作台 ============ -->
+                <template v-if="view === 'dashboard'">
+                    <el-row :gutter="14">
+                        <el-col :span="6"><div class="stat-card"><div class="num">{{ ws.todayNewUsers }}</div><div class="label">今日新增用户</div></div></el-col>
+                        <el-col :span="6"><div class="stat-card"><div class="num">{{ ws.todayOrders }}</div><div class="label">今日订单</div></div></el-col>
+                        <el-col :span="6"><div class="stat-card"><div class="num">¥{{ ws.todayTurnover }}</div><div class="label">今日成交额</div></div></el-col>
+                        <el-col :span="6"><div class="stat-card"><div class="num warn">{{ ws.pendingAuditCount }}</div><div class="label">待审核商品</div></div></el-col>
+                    </el-row>
+                    <el-row :gutter="14" style="margin-top:14px;">
+                        <el-col :span="6"><div class="stat-card"><div class="num">{{ ws.totalUsers }}</div><div class="label">用户总数</div></div></el-col>
+                        <el-col :span="6"><div class="stat-card"><div class="num">{{ ws.totalProducts }}</div><div class="label">商品总数</div></div></el-col>
+                        <el-col :span="6"><div class="stat-card"><div class="num">{{ ws.totalOrders }}</div><div class="label">订单总数</div></div></el-col>
+                        <el-col :span="6"><div class="stat-card"><div class="num danger">{{ ws.pendingReportCount }}</div><div class="label">待处理举报</div></div></el-col>
+                    </el-row>
+                    <div class="panel">
+                        <h3>待办事项</h3>
+                        <p style="font-size:13px;color:#8E9299;line-height:2;">
+                            • 有 <b style="color:#E1A200;">{{ ws.pendingAuditCount }}</b> 件商品等待审核，请及时处理
+                            <el-button type="text" @click="switchView('audit')">去审核 ›</el-button>
+                        </p>
+                        <p style="font-size:13px;color:#8E9299;line-height:2;">
+                            • 有 <b style="color:#EA5455;">{{ ws.pendingReportCount }}</b> 条举报等待处理，请及时核实
+                            <el-button type="text" @click="switchView('reports')">去处理 ›</el-button>
+                        </p>
+                    </div>
+                </template>
+
+                <!-- ============ 商品审核 ============ -->
+                <template v-if="view === 'audit'">
+                    <div class="panel">
+                        <h3>待审核商品</h3>
+                        <el-table :data="auditList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="商品" min-width="240">
+                                <template slot-scope="s">
+                                    <span class="cover-mini" :style="{backgroundColor: s.row.coverColor}">{{ (s.row.title || '').substring(0, 2) }}</span>
+                                    <div style="display:inline-block;vertical-align:middle;">
+                                        <div>{{ s.row.title }}</div>
+                                        <div style="font-size:12px;color:#8E9299;">{{ s.row.sellerNickname }} · {{ s.row.categoryName }}</div>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="价格" width="110">
+                                <template slot-scope="s">¥{{ s.row.price }} <span style="font-size:12px;color:#8E9299;" v-if="s.row.originalPrice">/ ¥{{ s.row.originalPrice }}</span></template>
+                            </el-table-column>
+                            <el-table-column label="成色" prop="conditionText" width="110"></el-table-column>
+                            <el-table-column label="提交时间" width="160">
+                                <template slot-scope="s">{{ (s.row.createTime || '').substring(0, 16) }}</template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="240">
+                                <template slot-scope="s">
+                                    <el-button size="mini" @click="showProduct(s.row)">详情</el-button>
+                                    <el-button size="mini" type="success" @click="audit(s.row, true)">通过</el-button>
+                                    <el-button size="mini" type="danger" @click="audit(s.row, false)">驳回</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <el-pagination style="margin-top:12px;" layout="prev, pager, next, total"
+                                       :total="auditTotal" :page-size="10" :current-page.sync="auditPage"
+                                       @current-change="loadAudit"></el-pagination>
+                    </div>
+                </template>
+
+                <!-- ============ 商品管理 ============ -->
+                <template v-if="view === 'products'">
+                    <div class="panel">
+                        <h3>商品管理</h3>
+                        <div style="margin-bottom:12px;">
+                            <el-select v-model="pQuery.status" placeholder="全部状态" clearable size="small" style="width:130px;">
+                                <el-option v-for="(v, k) in statusMap" :key="k" :label="v" :value="Number(k)"></el-option>
+                            </el-select>
+                            <el-input v-model="pQuery.keyword" placeholder="搜索标题" size="small" style="width:200px;margin-left:8px;" clearable></el-input>
+                            <el-button size="small" type="primary" @click="loadProducts">查询</el-button>
+                        </div>
+                        <el-table :data="productList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="ID" prop="id" width="70"></el-table-column>
+                            <el-table-column label="商品" min-width="220">
+                                <template slot-scope="s">
+                                    <span class="cover-mini" :style="{backgroundColor: s.row.coverColor}">{{ (s.row.title || '').substring(0, 2) }}</span>
+                                    <span>{{ s.row.title }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="卖家" prop="sellerNickname" width="110"></el-table-column>
+                            <el-table-column label="价格" width="90">
+                                <template slot-scope="s">¥{{ s.row.price }}</template>
+                            </el-table-column>
+                            <el-table-column label="状态" width="100">
+                                <template slot-scope="s"><span class="status-tag" :class="'st-' + s.row.status">{{ s.row.statusText }}</span></template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="200">
+                                <template slot-scope="s">
+                                    <el-button size="mini" @click="showProduct(s.row)">详情</el-button>
+                                    <el-button size="mini" type="danger" v-if="s.row.status === 1 || s.row.status === 4"
+                                               @click="offline(s.row)">违规下架</el-button>
+                                    <el-button size="mini" type="success" v-if="s.row.status === 5"
+                                               @click="restore(s.row)">恢复上架</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <el-pagination style="margin-top:12px;" layout="prev, pager, next, total"
+                                       :total="productTotal" :page-size="10" :current-page.sync="pQuery.page"
+                                       @current-change="loadProducts"></el-pagination>
+                    </div>
+                </template>
+
+                <!-- ============ 分类管理 ============ -->
+                <template v-if="view === 'categories'">
+                    <div class="panel">
+                        <h3>分类管理 <el-button size="mini" type="primary" style="float:right;" @click="openCategory()">新增分类</el-button></h3>
+                        <el-table :data="categoryList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="ID" prop="id" width="70"></el-table-column>
+                            <el-table-column label="图标" width="80">
+                                <template slot-scope="s">
+                                    <span class="cover-mini" style="border-radius:50%;" :style="{backgroundColor: s.row.iconColor}">{{ (s.row.name || '')[0] }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="名称" prop="name" width="140"></el-table-column>
+                            <el-table-column label="排序" prop="sort" width="80"></el-table-column>
+                            <el-table-column label="状态" width="100">
+                                <template slot-scope="s">
+                                    <el-tag :type="s.row.status === 1 ? 'success' : 'info'" size="mini">{{ s.row.status === 1 ? '启用' : '禁用' }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="260">
+                                <template slot-scope="s">
+                                    <el-button size="mini" @click="openCategory(s.row)">编辑</el-button>
+                                    <el-button size="mini" :type="s.row.status === 1 ? 'warning' : 'success'"
+                                               @click="toggleCategory(s.row)">{{ s.row.status === 1 ? '禁用' : '启用' }}</el-button>
+                                    <el-button size="mini" type="danger" @click="deleteCategory(s.row)">删除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
+                </template>
+
+                <!-- ============ 订单管理 ============ -->
+                <template v-if="view === 'orders'">
+                    <div class="panel">
+                        <h3>订单管理</h3>
+                        <div style="margin-bottom:12px;">
+                            <el-select v-model="oQuery.status" placeholder="全部状态" clearable size="small" style="width:120px;">
+                                <el-option v-for="(v, k) in orderStatusMap" :key="k" :label="v" :value="Number(k)"></el-option>
+                            </el-select>
+                            <el-input v-model="oQuery.keyword" placeholder="订单号 / 商品标题" size="small" style="width:220px;margin-left:8px;" clearable></el-input>
+                            <el-date-picker v-model="oQuery.range" type="daterange" size="small" style="margin-left:8px;"
+                                            value-format="yyyy-MM-dd" range-separator="~" start-placeholder="开始日期" end-placeholder="结束日期"></el-date-picker>
+                            <el-button size="small" type="primary" @click="loadOrders">查询</el-button>
+                        </div>
+                        <el-table :data="orderList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="订单号" prop="orderNo" width="220"></el-table-column>
+                            <el-table-column label="商品" prop="productTitle" min-width="160"></el-table-column>
+                            <el-table-column label="买家" prop="buyerNickname" width="100"></el-table-column>
+                            <el-table-column label="卖家" prop="sellerNickname" width="100"></el-table-column>
+                            <el-table-column label="金额" width="90">
+                                <template slot-scope="s">¥{{ s.row.amount }}</template>
+                            </el-table-column>
+                            <el-table-column label="状态" width="90">
+                                <template slot-scope="s">{{ s.row.statusText }}</template>
+                            </el-table-column>
+                            <el-table-column label="下单时间" width="150">
+                                <template slot-scope="s">{{ (s.row.createTime || '').substring(0, 16) }}</template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="120">
+                                <template slot-scope="s">
+                                    <el-button size="mini" type="danger"
+                                               v-if="[1,2,3,6].includes(s.row.status)"
+                                               @click="closeOrder(s.row)">关闭订单</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <el-pagination style="margin-top:12px;" layout="prev, pager, next, total"
+                                       :total="orderTotal" :page-size="10" :current-page.sync="oQuery.page"
+                                       @current-change="loadOrders"></el-pagination>
+                    </div>
+                </template>
+
+                <!-- ============ 学生管理 ============ -->
+                <template v-if="view === 'users'">
+                    <div class="panel">
+                        <h3>学生管理</h3>
+                        <div style="margin-bottom:12px;">
+                            <el-input v-model="uQuery.keyword" placeholder="学号 / 昵称" size="small" style="width:200px;" clearable></el-input>
+                            <el-select v-model="uQuery.status" placeholder="全部状态" clearable size="small" style="width:120px;margin-left:8px;">
+                                <el-option label="正常" :value="0"></el-option>
+                                <el-option label="封禁" :value="1"></el-option>
+                            </el-select>
+                            <el-button size="small" type="primary" @click="loadUsers">查询</el-button>
+                        </div>
+                        <el-table :data="userList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="ID" prop="id" width="70"></el-table-column>
+                            <el-table-column label="学生" min-width="180">
+                                <template slot-scope="s">
+                                    <div class="avatar small" style="display:inline-flex;vertical-align:middle;" :style="{backgroundColor: s.row.avatarColor}">{{ (s.row.nickname || '?')[0] }}</div>
+                                    <span style="margin-left:8px;">{{ s.row.nickname }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="学号" prop="username" width="120"></el-table-column>
+                            <el-table-column label="校区" prop="campus" width="120"></el-table-column>
+                            <el-table-column label="信用分" prop="credit" width="90"></el-table-column>
+                            <el-table-column label="状态" width="90">
+                                <template slot-scope="s">
+                                    <el-tag :type="s.row.status === 0 ? 'success' : 'danger'" size="mini">{{ s.row.status === 0 ? '正常' : '封禁' }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="120">
+                                <template slot-scope="s">
+                                    <el-button size="mini" :type="s.row.status === 0 ? 'danger' : 'success'"
+                                               @click="toggleUser(s.row)">{{ s.row.status === 0 ? '封禁' : '解封' }}</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <el-pagination style="margin-top:12px;" layout="prev, pager, next, total"
+                                       :total="userTotal" :page-size="10" :current-page.sync="uQuery.page"
+                                       @current-change="loadUsers"></el-pagination>
+                    </div>
+                </template>
+
+                <!-- ============ 举报处理 ============ -->
+                <template v-if="view === 'reports'">
+                    <div class="panel">
+                        <h3>举报处理</h3>
+                        <div style="margin-bottom:12px;">
+                            <el-select v-model="rQuery.status" placeholder="全部状态" clearable size="small" style="width:130px;">
+                                <el-option label="待处理" :value="0"></el-option>
+                                <el-option label="已处理" :value="1"></el-option>
+                                <el-option label="已驳回" :value="2"></el-option>
+                            </el-select>
+                            <el-button size="small" type="primary" @click="loadReports">查询</el-button>
+                        </div>
+                        <el-table :data="reportList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="ID" prop="id" width="70"></el-table-column>
+                            <el-table-column label="举报人" prop="reporterNickname" width="110"></el-table-column>
+                            <el-table-column label="被举报商品" min-width="170">
+                                <template slot-scope="s">
+                                    <span class="cover-mini" :style="{backgroundColor: s.row.productCoverColor}">{{ (s.row.productTitle || '').substring(0, 2) }}</span>
+                                    <span>{{ s.row.productTitle }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="原因" prop="reason" width="110"></el-table-column>
+                            <el-table-column label="说明" prop="description" min-width="140" show-overflow-tooltip></el-table-column>
+                            <el-table-column label="状态" width="90">
+                                <template slot-scope="s">
+                                    <el-tag :type="s.row.status === 0 ? 'warning' : (s.row.status === 1 ? 'success' : 'info')" size="mini">{{ s.row.statusText }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="200">
+                                <template slot-scope="s">
+                                    <template v-if="s.row.status === 0">
+                                        <el-button size="mini" type="danger" @click="handleReport(s.row, 'offline')">下架商品</el-button>
+                                        <el-button size="mini" @click="handleReport(s.row, 'reject')">驳回举报</el-button>
+                                    </template>
+                                    <span v-else style="font-size:12px;color:#8E9299;">已处理</span>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <el-pagination style="margin-top:12px;" layout="prev, pager, next, total"
+                                       :total="reportTotal" :page-size="10" :current-page.sync="rQuery.page"
+                                       @current-change="loadReports"></el-pagination>
+                    </div>
+                </template>
+
+                <!-- ============ 公告管理 ============ -->
+                <template v-if="view === 'notices'">
+                    <div class="panel">
+                        <h3>公告管理 <el-button size="mini" type="primary" style="float:right;" @click="openNotice()">发布公告</el-button></h3>
+                        <el-table :data="noticeList" v-loading="loading" style="width:100%;">
+                            <el-table-column label="ID" prop="id" width="70"></el-table-column>
+                            <el-table-column label="标题" prop="title" width="220"></el-table-column>
+                            <el-table-column label="内容" prop="content" min-width="240" show-overflow-tooltip></el-table-column>
+                            <el-table-column label="状态" width="90">
+                                <template slot-scope="s">
+                                    <el-tag :type="s.row.status === 1 ? 'success' : 'info'" size="mini">{{ s.row.status === 1 ? '展示中' : '已隐藏' }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="发布时间" width="150">
+                                <template slot-scope="s">{{ (s.row.createTime || '').substring(0, 16) }}</template>
+                            </el-table-column>
+                            <el-table-column label="操作" width="220">
+                                <template slot-scope="s">
+                                    <el-button size="mini" @click="openNotice(s.row)">编辑</el-button>
+                                    <el-button size="mini" :type="s.row.status === 1 ? 'warning' : 'success'"
+                                               @click="toggleNotice(s.row)">{{ s.row.status === 1 ? '隐藏' : '展示' }}</el-button>
+                                    <el-button size="mini" type="danger" @click="deleteNotice(s.row)">删除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <el-pagination style="margin-top:12px;" layout="prev, pager, next, total"
+                                       :total="noticeTotal" :page-size="10" :current-page.sync="nQuery.page"
+                                       @current-change="loadNotices"></el-pagination>
+                    </div>
+                </template>
+
+                <!-- ============ 数据统计 ============ -->
+                <template v-if="view === 'statistics'">
+                    <div class="panel">
+                        <h3>数据统计</h3>
+                        <div style="margin-bottom:14px;">
+                            <el-date-picker v-model="sQuery.range" type="daterange" size="small"
+                                            value-format="yyyy-MM-dd" range-separator="~"
+                                            start-placeholder="开始日期" end-placeholder="结束日期"></el-date-picker>
+                            <el-button size="small" type="primary" style="margin-left:8px;" @click="loadStatistics">查询</el-button>
+                        </div>
+
+                        <el-row :gutter="16">
+                            <el-col :span="8">
+                                <h4 style="font-size:13px;margin-bottom:10px;">💰 成交额趋势</h4>
+                                <div v-for="(d, i) in turnover.dateList" :key="d" class="bar-row">
+                                    <span class="bar-label">{{ d }}</span>
+                                    <div class="bar-track">
+                                        <div class="bar-fill" :style="{width: barWidth(turnover.turnoverList[i], maxTurnover)}"></div>
+                                    </div>
+                                    <span class="bar-value">¥{{ turnover.turnoverList[i] }}</span>
+                                </div>
+                                <div v-if="!turnover.dateList || !turnover.dateList.length" class="empty" style="padding:20px 0;">暂无数据</div>
+                            </el-col>
+                            <el-col :span="8">
+                                <h4 style="font-size:13px;margin-bottom:10px;">📋 订单量趋势</h4>
+                                <div v-for="(d, i) in orderStats.dateList" :key="d" class="bar-row">
+                                    <span class="bar-label">{{ d }}</span>
+                                    <div class="bar-track">
+                                        <div class="bar-fill" :style="{width: barWidth(orderStats.orderCountList[i], maxOrders)}"></div>
+                                    </div>
+                                    <span class="bar-value">{{ orderStats.orderCountList[i] }} 单</span>
+                                </div>
+                                <div v-if="!orderStats.dateList || !orderStats.dateList.length" class="empty" style="padding:20px 0;">暂无数据</div>
+                            </el-col>
+                            <el-col :span="8">
+                                <h4 style="font-size:13px;margin-bottom:10px;">👥 用户增长</h4>
+                                <div v-for="(d, i) in userGrowth.dateList" :key="d" class="bar-row">
+                                    <span class="bar-label">{{ d }}</span>
+                                    <div class="bar-track">
+                                        <div class="bar-fill" :style="{width: barWidth(userGrowth.newUserList[i], maxUsers)}"></div>
+                                    </div>
+                                    <span class="bar-value">{{ userGrowth.newUserList[i] }} 人</span>
+                                </div>
+                                <div v-if="!userGrowth.dateList || !userGrowth.dateList.length" class="empty" style="padding:20px 0;">暂无数据</div>
+                            </el-col>
+                        </el-row>
+
+                        <h4 style="font-size:13px;margin:20px 0 10px;">🔥 热销商品 Top10</h4>
+                        <el-table :data="topProducts" style="width:100%;" size="small">
+                            <el-table-column label="排名" width="70">
+                                <template slot-scope="s">{{ s.$index + 1 }}</template>
+                            </el-table-column>
+                            <el-table-column label="商品" min-width="200">
+                                <template slot-scope="s">
+                                    <span class="cover-mini" :style="{backgroundColor: s.row.coverColor}">{{ (s.row.title || '').substring(0, 2) }}</span>
+                                    <span>{{ s.row.title }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="成交量" prop="orderCount" width="100"></el-table-column>
+                            <el-table-column label="成交额" width="120">
+                                <template slot-scope="s">¥{{ s.row.turnover }}</template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
+                </template>
+            </el-main>
+        </el-container>
+    </el-container>
+
+    <!-- 商品详情抽屉 -->
+    <el-dialog title="商品详情" :visible.sync="productDialog" width="520px">
+        <div v-if="currentProduct">
+            <div style="display:flex;gap:16px;">
+                <div class="cover-mini" style="width:110px;height:110px;border-radius:12px;font-size:26px;"
+                     :style="{backgroundColor: currentProduct.coverColor}">{{ (currentProduct.title || '').substring(0, 2) }}</div>
+                <div>
+                    <h3 style="margin-bottom:8px;">{{ currentProduct.title }}</h3>
+                    <p style="color:#EA5455;font-size:19px;font-weight:700;">¥{{ currentProduct.price }}</p>
+                    <p style="font-size:12px;color:#8E9299;margin-top:6px;">
+                        {{ currentProduct.categoryName }} · {{ currentProduct.conditionText }} ·
+                        {{ currentProduct.deliveryType === 2 ? '快递代取' : '校内面交' }}
+                    </p>
+                    <p style="font-size:12px;color:#8E9299;margin-top:4px;">
+                        卖家：{{ currentProduct.sellerNickname }}（信用 {{ currentProduct.sellerCredit }}）
+                    </p>
+                    <p style="font-size:12px;color:#8E9299;margin-top:4px;">📍 {{ currentProduct.campus || '未填写' }}</p>
+                </div>
+            </div>
+            <p style="margin-top:14px;font-size:13px;line-height:1.7;">{{ currentProduct.description || '（无描述）' }}</p>
+            <p style="margin-top:10px;font-size:12px;color:#8E9299;">浏览量 {{ currentProduct.viewCount }} · 收藏 {{ currentProduct.collectCount }} · 点赞 {{ currentProduct.likeCount }}</p>
+        </div>
+        <div slot="footer">
+            <el-button size="small" type="success" v-if="currentProduct && currentProduct.status === 0"
+                       @click="auditFromDialog(true)">通过</el-button>
+            <el-button size="small" type="danger" v-if="currentProduct && currentProduct.status === 0"
+                       @click="auditFromDialog(false)">驳回</el-button>
+            <el-button size="small" @click="productDialog = false">关闭</el-button>
+        </div>
+    </el-dialog>
+
+    <!-- 分类编辑弹窗 -->
+    <el-dialog :title="categoryForm.id ? '编辑分类' : '新增分类'" :visible.sync="categoryDialog" width="440px">
+        <el-form label-width="80px" size="small">
+            <el-form-item label="名称"><el-input v-model="categoryForm.name"></el-input></el-form-item>
+            <el-form-item label="色块">
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                    <div v-for="c in palette" :key="c" @click="categoryForm.iconColor = c"
+                         :style="{width:'28px',height:'28px',borderRadius:'50%',backgroundColor:c,cursor:'pointer',
+                                  border: categoryForm.iconColor === c ? '3px solid #2D3436' : '3px solid transparent'}"></div>
+                </div>
+            </el-form-item>
+            <el-form-item label="排序"><el-input-number v-model="categoryForm.sort" :min="0"></el-input-number></el-form-item>
+        </el-form>
+        <div slot="footer">
+            <el-button size="small" @click="categoryDialog = false">取消</el-button>
+            <el-button size="small" type="primary" @click="saveCategory">保存</el-button>
+        </div>
+    </el-dialog>
+
+    <!-- 公告编辑弹窗 -->
+    <el-dialog :title="noticeForm.id ? '编辑公告' : '发布公告'" :visible.sync="noticeDialog" width="480px">
+        <el-form label-width="60px" size="small">
+            <el-form-item label="标题"><el-input v-model="noticeForm.title"></el-input></el-form-item>
+            <el-form-item label="内容"><el-input type="textarea" :rows="4" v-model="noticeForm.content"></el-input></el-form-item>
+        </el-form>
+        <div slot="footer">
+            <el-button size="small" @click="noticeDialog = false">取消</el-button>
+            <el-button size="small" type="primary" @click="saveNotice">保存并广播</el-button>
+        </div>
+    </el-dialog>
+</div>
+
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/lib/element.js"></script>
+<script src="/campus-static/lib/axios.min.js"></script>
+<script>
+    const ADMIN_TOKEN_KEY = 'campus_admin_token';
+    const ADMIN_KEY = 'campus_admin';
+
+    if (!localStorage.getItem(ADMIN_TOKEN_KEY)) {
+        location.href = '/admin-ui/login.html';
+    }
+
+    const adminApi = axios.create({ timeout: 15000 });
+    adminApi.interceptors.request.use(c => {
+        c.headers['admin-token'] = localStorage.getItem(ADMIN_TOKEN_KEY);
+        return c;
+    });
+    adminApi.interceptors.response.use(resp => {
+        const r = resp.data;
+        if (r.code === 1) return r.data;
+        if (r.code === 401) {
+            localStorage.removeItem(ADMIN_TOKEN_KEY);
+            location.href = '/admin-ui/login.html';
+        }
+        return Promise.reject(r);
+    });
+
+    const today = new Date();
+    const daysAgo = (n) => {
+        const d = new Date(today.getTime() - n * 86400000);
+        return d.toISOString().substring(0, 10);
+    };
+
+    new Vue({
+        el: '#app',
+        data: {
+            view: 'dashboard',
+            loading: false,
+            admin: JSON.parse(localStorage.getItem(ADMIN_KEY) || '{}'),
+            ws: {},
+            palette: ['#FF7675', '#74B9FF', '#55EFC4', '#A29BFE', '#FAB1A0', '#FFEAA7', '#81ECEC', '#DFE6E9', '#FDCB6E', '#6C5CE7'],
+            statusMap: { 0: '待审核', 1: '在售', 2: '交易中', 3: '已售出', 4: '已下架', 5: '已驳回' },
+            orderStatusMap: { 1: '待支付', 2: '待发货', 3: '待收货', 4: '已完成', 5: '已取消', 6: '退款中', 7: '已退款' },
+            titles: {
+                dashboard: '工作台', audit: '商品审核', products: '商品管理', categories: '分类管理',
+                orders: '订单管理', users: '学生管理', reports: '举报处理', notices: '公告管理', statistics: '数据统计'
+            },
+            // 各模块数据
+            auditList: [], auditTotal: 0, auditPage: 1,
+            productList: [], productTotal: 0, pQuery: { status: null, keyword: '', page: 1 },
+            categoryList: [], categoryDialog: false, categoryForm: {},
+            orderList: [], orderTotal: 0, oQuery: { status: null, keyword: '', range: [], page: 1 },
+            userList: [], userTotal: 0, uQuery: { keyword: '', status: null, page: 1 },
+            reportList: [], reportTotal: 0, rQuery: { status: null, page: 1 },
+            noticeList: [], noticeTotal: 0, nQuery: { page: 1 }, noticeDialog: false, noticeForm: {},
+            turnover: {}, orderStats: {}, userGrowth: {}, topProducts: [],
+            sQuery: { range: [daysAgo(6), daysAgo(0)] },
+            productDialog: false, currentProduct: null
+        },
+        computed: {
+            viewTitle() { return this.titles[this.view] || '管理后台'; },
+            maxTurnover() { return Math.max.apply(null, [1].concat(this.turnover.turnoverList || [])); },
+            maxOrders() { return Math.max.apply(null, [1].concat(this.orderStats.orderCountList || [])); },
+            maxUsers() { return Math.max.apply(null, [1].concat(this.userGrowth.newUserList || [])); }
+        },
+        created() { this.loadWorkspace(); },
+        methods: {
+            barWidth(value, max) {
+                return Math.max(2, Math.round((value || 0) / (max || 1) * 100)) + '%';
+            },
+            switchView(v) {
+                this.view = v;
+                if (v === 'dashboard') this.loadWorkspace();
+                if (v === 'audit') this.loadAudit();
+                if (v === 'products') this.loadProducts();
+                if (v === 'categories') this.loadCategories();
+                if (v === 'orders') this.loadOrders();
+                if (v === 'users') this.loadUsers();
+                if (v === 'reports') this.loadReports();
+                if (v === 'notices') this.loadNotices();
+                if (v === 'statistics') this.loadStatistics();
+            },
+            logout() {
+                adminApi.post('/admin/logout').finally(() => {
+                    localStorage.removeItem(ADMIN_TOKEN_KEY);
+                    location.href = '/admin-ui/login.html';
+                });
+            },
+            /* ---------- 工作台 ---------- */
+            loadWorkspace() {
+                adminApi.get('/admin/workspace').then(d => this.ws = d).catch(this.err);
+            },
+            /* ---------- 商品审核 ---------- */
+            loadAudit() {
+                this.loading = true;
+                adminApi.get('/admin/products', { params: { status: 0, page: this.auditPage, pageSize: 10 } })
+                    .then(d => { this.auditList = d.records || []; this.auditTotal = d.total || 0; })
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            audit(row, pass) {
+                let remark = '';
+                if (!pass) {
+                    const r = prompt('请填写驳回原因：', '信息描述不完整');
+                    if (r === null) return;
+                    remark = r;
+                }
+                adminApi.put('/admin/products/' + row.id + '/audit', { pass, remark }).then(() => {
+                    this.$message.success(pass ? '已通过上架' : '已驳回');
+                    this.loadAudit();
+                }).catch(this.err);
+            },
+            auditFromDialog(pass) {
+                this.productDialog = false;
+                this.audit(this.currentProduct, pass);
+            },
+            /* ---------- 商品管理 ---------- */
+            loadProducts() {
+                this.loading = true;
+                adminApi.get('/admin/products', {
+                    params: {
+                        status: this.pQuery.status === null ? undefined : this.pQuery.status,
+                        keyword: this.pQuery.keyword || undefined,
+                        page: this.pQuery.page, pageSize: 10
+                    }
+                }).then(d => { this.productList = d.records || []; this.productTotal = d.total || 0; })
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            showProduct(row) {
+                adminApi.get('/admin/products/' + row.id).then(d => {
+                    this.currentProduct = d;
+                    this.productDialog = true;
+                }).catch(this.err);
+            },
+            offline(row) {
+                this.$confirm('确定将《' + row.title + '》违规下架吗？', '提示', { type: 'warning' }).then(() => {
+                    adminApi.put('/admin/products/' + row.id + '/offline').then(() => {
+                        this.$message.success('已下架');
+                        this.loadProducts();
+                    }).catch(this.err);
+                }).catch(() => {});
+            },
+            restore(row) {
+                adminApi.put('/admin/products/' + row.id + '/restore').then(() => {
+                    this.$message.success('已恢复上架');
+                    this.loadProducts();
+                }).catch(this.err);
+            },
+            /* ---------- 分类管理 ---------- */
+            loadCategories() {
+                this.loading = true;
+                adminApi.get('/admin/categories').then(d => this.categoryList = d || [])
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            openCategory(row) {
+                this.categoryForm = row ? Object.assign({}, row) : { name: '', iconColor: '#74B9FF', sort: 0 };
+                this.categoryDialog = true;
+            },
+            saveCategory() {
+                if (!this.categoryForm.name) { this.$message.warning('请填写分类名称'); return; }
+                const req = this.categoryForm.id
+                    ? adminApi.put('/admin/categories/' + this.categoryForm.id, this.categoryForm)
+                    : adminApi.post('/admin/categories', this.categoryForm);
+                req.then(() => {
+                    this.$message.success('保存成功');
+                    this.categoryDialog = false;
+                    this.loadCategories();
+                }).catch(this.err);
+            },
+            toggleCategory(row) {
+                adminApi.put('/admin/categories/' + row.id + '/status', null, { params: { status: row.status === 1 ? 0 : 1 } })
+                    .then(() => this.loadCategories()).catch(this.err);
+            },
+            deleteCategory(row) {
+                this.$confirm('确定删除分类「' + row.name + '」吗？', '提示', { type: 'warning' }).then(() => {
+                    adminApi.delete('/admin/categories/' + row.id).then(() => {
+                        this.$message.success('已删除');
+                        this.loadCategories();
+                    }).catch(this.err);
+                }).catch(() => {});
+            },
+            /* ---------- 订单管理 ---------- */
+            loadOrders() {
+                this.loading = true;
+                const range = this.oQuery.range || [];
+                adminApi.get('/admin/orders', {
+                    params: {
+                        status: this.oQuery.status === null ? undefined : this.oQuery.status,
+                        keyword: this.oQuery.keyword || undefined,
+                        beginTime: range[0] ? range[0] + ' 00:00:00' : undefined,
+                        endTime: range[1] ? range[1] + ' 23:59:59' : undefined,
+                        page: this.oQuery.page, pageSize: 10
+                    }
+                }).then(d => { this.orderList = d.records || []; this.orderTotal = d.total || 0; })
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            closeOrder(row) {
+                this.$prompt('请填写关闭原因（纠纷处理等）：', '关闭订单', { inputValue: '买卖双方纠纷，平台介入关闭' }).then(({ value }) => {
+                    adminApi.put('/admin/orders/' + row.id + '/close', null, { params: { reason: value } })
+                        .then(() => { this.$message.success('已关闭，商品恢复在售'); this.loadOrders(); })
+                        .catch(this.err);
+                }).catch(() => {});
+            },
+            /* ---------- 学生管理 ---------- */
+            loadUsers() {
+                this.loading = true;
+                adminApi.get('/admin/users', {
+                    params: {
+                        keyword: this.uQuery.keyword || undefined,
+                        status: this.uQuery.status === null ? undefined : this.uQuery.status,
+                        page: this.uQuery.page, pageSize: 10
+                    }
+                }).then(d => { this.userList = d.records || []; this.userTotal = d.total || 0; })
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            toggleUser(row) {
+                const action = row.status === 0 ? '封禁' : '解封';
+                this.$confirm('确定' + action + '学生「' + row.nickname + '」吗？', '提示', { type: 'warning' }).then(() => {
+                    adminApi.put('/admin/users/' + row.id + '/status', null, { params: { status: row.status === 0 ? 1 : 0 } })
+                        .then(() => { this.$message.success('已' + action); this.loadUsers(); })
+                        .catch(this.err);
+                }).catch(() => {});
+            },
+            /* ---------- 举报处理 ---------- */
+            loadReports() {
+                this.loading = true;
+                adminApi.get('/admin/reports', {
+                    params: { status: this.rQuery.status === null ? undefined : this.rQuery.status, page: this.rQuery.page, pageSize: 10 }
+                }).then(d => { this.reportList = d.records || []; this.reportTotal = d.total || 0; })
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            handleReport(row, action) {
+                const tip = action === 'offline' ? '确定下架该商品吗？' : '确定驳回该举报吗？';
+                this.$prompt(tip + '（可填写处理备注）', '处理举报').then(({ value }) => {
+                    adminApi.put('/admin/reports/' + row.id + '/handle', { action, remark: value || '' })
+                        .then(() => { this.$message.success('处理完成'); this.loadReports(); })
+                        .catch(this.err);
+                }).catch(() => {});
+            },
+            /* ---------- 公告管理 ---------- */
+            loadNotices() {
+                this.loading = true;
+                adminApi.get('/admin/notices', { params: { page: this.nQuery.page, pageSize: 10 } })
+                    .then(d => { this.noticeList = d.records || []; this.noticeTotal = d.total || 0; })
+                    .catch(this.err).finally(() => this.loading = false);
+            },
+            openNotice(row) {
+                this.noticeForm = row ? Object.assign({}, row) : { title: '', content: '' };
+                this.noticeDialog = true;
+            },
+            saveNotice() {
+                if (!this.noticeForm.title || !this.noticeForm.content) { this.$message.warning('请填写标题和内容'); return; }
+                const req = this.noticeForm.id
+                    ? adminApi.put('/admin/notices/' + this.noticeForm.id, this.noticeForm)
+                    : adminApi.post('/admin/notices', this.noticeForm);
+                req.then(() => {
+                    this.$message.success('已保存，公告已向在线用户广播');
+                    this.noticeDialog = false;
+                    this.loadNotices();
+                }).catch(this.err);
+            },
+            toggleNotice(row) {
+                adminApi.put('/admin/notices/' + row.id + '/status', null, { params: { status: row.status === 1 ? 0 : 1 } })
+                    .then(() => this.loadNotices()).catch(this.err);
+            },
+            deleteNotice(row) {
+                this.$confirm('确定删除公告「' + row.title + '」吗？', '提示', { type: 'warning' }).then(() => {
+                    adminApi.delete('/admin/notices/' + row.id).then(() => {
+                        this.$message.success('已删除');
+                        this.loadNotices();
+                    }).catch(this.err);
+                }).catch(() => {});
+            },
+            /* ---------- 数据统计 ---------- */
+            loadStatistics() {
+                const range = this.sQuery.range || [daysAgo(6), daysAgo(0)];
+                const begin = range[0], end = range[1];
+                adminApi.get('/admin/statistics/turnover', { params: { begin, end } }).then(d => this.turnover = d).catch(this.err);
+                adminApi.get('/admin/statistics/orders', { params: { begin, end } }).then(d => this.orderStats = d).catch(this.err);
+                adminApi.get('/admin/statistics/users', { params: { begin, end } }).then(d => this.userGrowth = d).catch(this.err);
+                adminApi.get('/admin/statistics/top10').then(d => this.topProducts = d || []).catch(this.err);
+            },
+            err(e) {
+                if (e && e.msg) this.$message.error(e.msg);
+            }
+        }
+    });
+</script>
+</body>
+</html>

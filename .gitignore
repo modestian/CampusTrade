@@ -1,0 +1,36 @@
+# ============================================================
+# 校园二手交易平台 - Git 忽略规则
+# ============================================================
+
+# ---------- 构建产物（Maven） ----------
+target/
+*.class
+*.jar
+!mvnw
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---------- IDE / 编辑器 ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+
+# ---------- 日志与运行时 ----------
+*.log
+logs/
+hs_err_pid*.log
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 临时 / 测试产物 ----------
+screenshots/
+docs-screenshot-*.png
+*.tmp
+*.bak
+*.orig

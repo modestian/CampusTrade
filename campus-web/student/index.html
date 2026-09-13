@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>校园二手集市</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app">
+    <!-- 搜索栏 -->
+    <div style="background: var(--primary); padding: 8px 10px 12px; position: sticky; top: 0; z-index: 100;">
+        <div style="display:flex; gap:8px;">
+            <input v-model="keyword" @keyup.enter="search" placeholder="搜索教材、数码、生活用品..."
+                   style="flex:1;border:none;border-radius:18px;padding:9px 14px;font-size:13px;outline:none;">
+            <button class="btn" style="background:rgba(255,255,255,.25);border-radius:18px;" @click="search">搜索</button>
+        </div>
+    </div>
+
+    <!-- 分类快捷入口 -->
+    <div style="background:#fff;">
+        <div class="cat-grid">
+            <div class="cat-item" v-for="cat in categories" :key="cat.id" @click="filterCategory(cat.id)">
+                <div class="cat-icon" :style="colorStyle(cat.iconColor)">{{ firstChars(cat.name) }}</div>
+                <div class="cat-name">{{ cat.name }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 热门榜单 -->
+    <template v-if="hots.length">
+        <div class="section-title">热门好物 🔥</div>
+        <div style="display:flex;gap:10px;overflow-x:auto;padding:8px 10px 12px;">
+            <div v-for="(p, i) in hots" :key="p.id" @click="goDetail(p.id)"
+                 style="flex-shrink:0;width:110px;cursor:pointer;">
+                <div style="height:80px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;position:relative;"
+                     :style="colorStyle(p.coverColor)">
+                    {{ firstChars(p.title, 2) }}
+                    <span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,.4);border-radius:8px;font-size:10px;padding:1px 6px;font-weight:normal;">No.{{ i + 1 }}</span>
+                </div>
+                <div style="font-size:12px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.title }}</div>
+                <div class="price" style="font-size:14px;">{{ p.price }}</div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 排序 & 筛选 -->
+    <div style="display:flex;background:#fff;padding:10px 12px;gap:16px;font-size:13px;position:sticky;top:52px;z-index:99;">
+        <span :style="sortStyle('latest')" @click="changeSort('latest')">最新</span>
+        <span :style="sortStyle('hot')" @click="changeSort('hot')">热度</span>
+        <span :style="sortStyle('price_asc')" @click="changeSort('price_asc')">价格↑</span>
+        <span :style="sortStyle('price_desc')" @click="changeSort('price_desc')">价格↓</span>
+        <span v-if="categoryId" style="margin-left:auto;color:var(--primary);" @click="clearFilter">清除筛选 ✕</span>
+    </div>
+
+    <!-- 商品列表 -->
+    <div class="product-grid">
+        <div v-for="p in products" :key="p.id" class="product-card" @click="goDetail(p.id)">
+            <div class="product-cover" :style="colorStyle(p.coverColor)">
+                {{ firstChars(p.title, 2) }}
+                <span class="status-tag" v-if="p.statusText">{{ p.statusText }}</span>
+            </div>
+            <div class="product-info">
+                <div class="title">{{ p.title }}</div>
+                <div class="price-row">
+                    <span class="price">{{ p.price }}</span>
+                    <span class="original-price" v-if="p.originalPrice">¥{{ p.originalPrice }}</span>
+                </div>
+                <div class="meta">
+                    <span>{{ p.sellerNickname || '同学' }}</span>
+                    <span>👀 {{ p.viewCount }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="empty" v-if="!loading && !products.length">
+        <span class="icon">📦</span>暂时没有商品，快去发布第一件吧
+    </div>
+    <div class="empty" v-if="loading">加载中...</div>
+
+    <!-- 底部 Tab -->
+    <div class="tabbar">
+        <a href="/student/index.html" class="active"><span class="icon">🏠</span>首页</a>
+        <a href="/student/feed.html"><span class="icon">✨</span>动态</a>
+        <a href="/student/publish.html"><span class="icon">➕</span>发布</a>
+        <a href="/student/orders.html"><span class="icon">📋</span>订单</a>
+        <a href="/student/me.html"><span class="icon">👤</span>我的</a>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    const vm = new Vue({
+        el: '#app',
+        data: {
+            keyword: '',
+            categoryId: null,
+            sort: 'latest',
+            categories: [],
+            hots: [],
+            products: [],
+            loading: false
+        },
+        created() {
+            this.loadCategories();
+            this.loadHots();
+            this.loadProducts();
+        },
+        methods: {
+            loadCategories() {
+                api.get('/student/categories').then(data => this.categories = data || []);
+            },
+            loadHots() {
+                api.get('/student/products/hot').then(data => this.hots = data || []);
+            },
+            loadProducts() {
+                this.loading = true;
+                api.get('/student/products', {
+                    params: {
+                        categoryId: this.categoryId || undefined,
+                        keyword: this.keyword || undefined,
+                        sort: this.sort,
+                        page: 1,
+                        pageSize: 20
+                    }
+                }).then(data => this.products = (data && data.records) || []).finally(() => this.loading = false);
+            },
+            search() { this.loadProducts(); },
+            filterCategory(id) {
+                this.categoryId = (this.categoryId === id) ? null : id;
+                this.loadProducts();
+            },
+            clearFilter() { this.categoryId = null; this.keyword = ''; this.loadProducts(); },
+            changeSort(s) { this.sort = s; this.loadProducts(); },
+            sortStyle(s) {
+                return this.sort === s ? { color: 'var(--primary)', fontWeight: '600' } : { color: 'var(--text-light)' };
+            },
+            goDetail(id) { location.href = '/student/product-detail.html?id=' + id; }
+        }
+    });
+
+    /* 从商品详情页返回时（浏览器 bfcache 恢复，脚本不会重新执行），自动刷新列表与热榜，
+     * 保证浏览量、状态等数据无需手动刷新即可实时更新。 */
+    window.addEventListener('pageshow', e => {
+        if (e.persisted) {
+            vm.loadProducts();
+            vm.loadHots();
+        }
+    });
+</script>
+</body>
+</html>

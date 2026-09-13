@@ -1,0 +1,274 @@
+/* ============================================================
+   校园二手交易平台 - 学生端全局样式（移动端 H5 风格）
+   ============================================================ */
+
+:root {
+    --primary: #FF7675;
+    --primary-dark: #EE5A5A;
+    --bg: #F5F6FA;
+    --card: #FFFFFF;
+    --text: #2D3436;
+    --text-light: #8E9299;
+    --border: #EFEFEF;
+    --success: #00B894;
+    --warning: #FDCB6E;
+    --purple: #6C5CE7;
+    /* 容器宽度：移动端 480px，PC 宽屏由媒体查询放宽 */
+    --app-width: 480px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+}
+
+/* 移动端容器 */
+.app {
+    max-width: var(--app-width);
+    margin: 0 auto;
+    min-height: 100vh;
+    background: var(--bg);
+    position: relative;
+    padding-bottom: 64px;
+}
+
+/* ---------- 顶部导航 ---------- */
+.navbar {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--primary); color: #fff;
+    height: 48px; display: flex; align-items: center;
+    padding: 0 12px; font-size: 16px; font-weight: 600;
+}
+.navbar .back { cursor: pointer; margin-right: 8px; font-weight: normal; }
+.navbar .nav-right { margin-left: auto; font-size: 13px; font-weight: normal; cursor: pointer; }
+
+/* ---------- 底部 Tab ---------- */
+.tabbar {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: var(--app-width);
+    background: #fff; display: flex; border-top: 1px solid var(--border);
+    z-index: 100;
+}
+.tabbar a {
+    flex: 1; text-align: center; padding: 8px 0 6px;
+    color: var(--text-light); text-decoration: none; font-size: 11px;
+}
+.tabbar a .icon { display: block; font-size: 18px; line-height: 1.4; }
+.tabbar a.active { color: var(--primary); }
+
+/* ---------- 卡片 ---------- */
+.card {
+    background: var(--card); border-radius: 10px;
+    margin: 10px 10px; padding: 12px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .04);
+}
+
+/* ---------- 商品瀑布流 ---------- */
+.product-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px; padding: 10px;
+}
+.product-card {
+    background: #fff; border-radius: 10px; overflow: hidden;
+    cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .05);
+}
+.product-cover {
+    height: 140px; display: flex; align-items: center; justify-content: center;
+    color: rgba(255, 255, 255, .9); font-size: 26px; font-weight: 700;
+    position: relative;
+}
+.product-cover .status-tag {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(0, 0, 0, .45); color: #fff;
+    font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: normal;
+}
+.product-info { padding: 8px 10px 10px; }
+.product-info .title {
+    font-size: 13px; line-height: 1.4; height: 36px; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.product-info .price-row { margin-top: 6px; display: flex; align-items: center; }
+.price { color: var(--primary); font-weight: 700; font-size: 16px; }
+.price::before { content: '¥'; font-size: 12px; }
+.original-price { color: var(--text-light); font-size: 11px; text-decoration: line-through; margin-left: 6px; }
+.meta { color: var(--text-light); font-size: 11px; margin-top: 4px; display: flex; justify-content: space-between; }
+
+/* ---------- 标签 ---------- */
+.tag {
+    display: inline-block; font-size: 11px; padding: 1px 8px;
+    border-radius: 8px; background: #FFF0F0; color: var(--primary);
+    margin-right: 6px;
+}
+.tag.gray { background: #F1F2F6; color: var(--text-light); }
+.tag.green { background: #E8F8F2; color: var(--success); }
+.tag.yellow { background: #FFF7E6; color: #E1A200; }
+.tag.purple { background: #F0EDFF; color: var(--purple); }
+
+/* ---------- 按钮 ---------- */
+.btn {
+    display: inline-block; border: none; border-radius: 18px;
+    padding: 8px 18px; font-size: 14px; cursor: pointer;
+    background: var(--primary); color: #fff; transition: opacity .2s;
+}
+.btn:hover { opacity: .9; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.block { display: block; width: 100%; padding: 11px; font-size: 15px; }
+.btn.plain { background: #fff; color: var(--text); border: 1px solid #DCDFE6; }
+.btn.danger { background: #EA5455; }
+.btn.green { background: var(--success); }
+.btn.small { padding: 4px 12px; font-size: 12px; border-radius: 12px; }
+
+/* ---------- 表单 ---------- */
+.form-item { margin-bottom: 14px; }
+.form-item label { display: block; font-size: 13px; color: var(--text-light); margin-bottom: 6px; }
+.form-input {
+    width: 100%; border: 1px solid #E4E7ED; border-radius: 8px;
+    padding: 10px 12px; font-size: 14px; outline: none; background: #fff;
+}
+.form-input:focus { border-color: var(--primary); }
+textarea.form-input { resize: none; height: 80px; }
+
+/* ---------- 色块选择器 ---------- */
+.color-picker { display: flex; flex-wrap: wrap; gap: 10px; }
+.color-dot {
+    width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+    border: 3px solid transparent;
+}
+.color-dot.active { border-color: var(--text); }
+
+/* ---------- 头像 ---------- */
+.avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 16px; flex-shrink: 0;
+}
+.avatar.small { width: 32px; height: 32px; font-size: 13px; }
+.avatar.large { width: 56px; height: 56px; font-size: 22px; }
+
+/* ---------- 列表行 ---------- */
+.row-line {
+    display: flex; align-items: center; padding: 12px 14px;
+    background: #fff; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.row-line .row-main { flex: 1; min-width: 0; }
+.row-line .arrow { color: #C8C9CC; margin-left: 8px; }
+.row-line .txt-main { font-size: 14px; }
+.row-line .txt-sub { font-size: 12px; color: var(--text-light); margin-top: 3px; }
+
+/* ---------- 空状态 ---------- */
+.empty { text-align: center; color: var(--text-light); padding: 60px 0; font-size: 13px; }
+.empty .icon { font-size: 40px; display: block; margin-bottom: 10px; }
+
+/* ---------- 分区标题 ---------- */
+.section-title {
+    padding: 14px 14px 6px; font-size: 15px; font-weight: 600;
+    display: flex; align-items: center;
+}
+.section-title::before {
+    content: ''; width: 4px; height: 15px; background: var(--primary);
+    border-radius: 2px; margin-right: 8px;
+}
+
+/* ---------- 分类快捷入口 ---------- */
+.cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px; }
+.cat-item { text-align: center; cursor: pointer; }
+.cat-item .cat-icon {
+    width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 18px;
+}
+.cat-item .cat-name { font-size: 12px; color: var(--text); }
+
+/* ---------- 聊天气泡 ---------- */
+.chat-box { padding: 10px; }
+.chat-msg { display: flex; margin-bottom: 12px; }
+.chat-msg.mine { flex-direction: row-reverse; }
+.chat-bubble {
+    max-width: 70%; padding: 9px 12px; border-radius: 12px;
+    background: #fff; font-size: 14px; line-height: 1.4; word-break: break-all;
+}
+.chat-msg.mine .chat-bubble { background: var(--primary); color: #fff; }
+.chat-time { text-align: center; color: #C8C9CC; font-size: 11px; margin: 10px 0; }
+
+/* ---------- 聊天输入框 ---------- */
+.chat-input-bar {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: var(--app-width); background: #fff;
+    display: flex; padding: 8px 10px; gap: 8px;
+    border-top: 1px solid var(--border); z-index: 100;
+}
+.chat-input-bar input {
+    flex: 1; border: 1px solid #E4E7ED; border-radius: 18px;
+    padding: 8px 14px; outline: none; font-size: 14px;
+}
+
+/* ---------- 详情页 ---------- */
+.detail-cover {
+    position: relative;
+    height: 260px; display: flex; align-items: center; justify-content: center;
+    color: rgba(255, 255, 255, .92); font-size: 40px; font-weight: 700;
+}
+/* 大图上的浮动返回按钮 */
+.back-fab {
+    position: absolute; top: 12px; left: 12px;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(0, 0, 0, .35); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: normal; line-height: 1;
+    cursor: pointer; z-index: 10;
+}
+.detail-price-bar { background: #fff; padding: 14px; }
+.detail-price-bar .big-price { font-size: 24px; color: var(--primary); font-weight: 700; }
+.detail-price-bar .big-price::before { content: '¥'; font-size: 16px; }
+
+/* ---------- 订单卡片 ---------- */
+.order-card { background: #fff; border-radius: 10px; margin: 10px; padding: 12px; }
+.order-head { display: flex; font-size: 12px; color: var(--text-light); margin-bottom: 10px; }
+.order-head .status { margin-left: auto; color: var(--primary); font-weight: 600; }
+.order-body { display: flex; gap: 10px; }
+.order-cover {
+    width: 72px; height: 72px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 18px;
+}
+.order-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+
+/* ---------- Toast ---------- */
+#toast {
+    position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, .75); color: #fff; padding: 10px 20px;
+    border-radius: 8px; font-size: 14px; z-index: 9999; display: none;
+}
+
+/* ============================================================
+   PC / 平板宽屏适配（≥ 768px）
+   容器加宽居中、商品四列网格、分类八列，充分利用横向空间
+   ============================================================ */
+@media (min-width: 768px) {
+    :root { --app-width: 1000px; }
+    body { background: #E8EAF0; }
+    .app { box-shadow: 0 0 30px rgba(45, 52, 54, .08); }
+    .product-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 14px; }
+    .product-cover { height: 170px; }
+    .cat-grid { grid-template-columns: repeat(8, 1fr); }
+    .detail-cover { height: 320px; }
+    .cat-item .cat-icon { width: 54px; height: 54px; font-size: 20px; }
+}
+
+    :root { --app-width: 1000px; }
+    body { background: #E8EAF0; }
+    .app { box-shadow: 0 0 30px rgba(45, 52, 54, .08); }
+    .product-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 14px; }
+    .product-cover { height: 170px; }
+    .cat-grid { grid-template-columns: repeat(8, 1fr); }
+    .detail-cover { height: 320px; }
+    .cat-item .cat-icon { width: 54px; height: 54px; font-size: 20px; }
+}
+

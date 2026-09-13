@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>商品详情</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app" v-if="product">
+    <!-- 色块大图 -->
+    <div class="detail-cover" :style="colorStyle(product.coverColor)">
+        <span class="back-fab" @click="goBack('/student/index.html')">‹</span>
+        {{ firstChars(product.title, 2) }}
+        <span style="position:absolute;top:14px;right:14px;font-size:12px;background:rgba(0,0,0,.35);padding:3px 10px;border-radius:10px;">
+            {{ product.statusText }}
+        </span>
+    </div>
+
+    <!-- 价格信息 -->
+    <div class="detail-price-bar">
+        <div style="display:flex;align-items:baseline;">
+            <span class="big-price">{{ product.price }}</span>
+            <span class="original-price" v-if="product.originalPrice" style="font-size:13px;">原价 ¥{{ product.originalPrice }}</span>
+        </div>
+        <div style="margin-top:8px;">
+            <span class="tag">{{ product.conditionText }}</span>
+            <span class="tag purple">{{ deliveryText(product.deliveryType) }}</span>
+            <span class="tag gray" v-if="product.campus">📍 {{ product.campus }}</span>
+        </div>
+        <div style="color:var(--text-light);font-size:12px;margin-top:8px;">
+            👀 {{ product.viewCount }} 浏览 · ⭐ {{ product.collectCount }} 收藏 · 👍 {{ product.likeCount }} 点赞
+        </div>
+    </div>
+
+    <!-- 标题与描述 -->
+    <div class="card">
+        <div style="font-size:16px;font-weight:600;line-height:1.5;">{{ product.title }}</div>
+        <div style="color:var(--text-light);font-size:13px;line-height:1.7;margin-top:10px;white-space:pre-wrap;">{{ product.description || '卖家很懒，没有写描述~' }}</div>
+        <div style="color:#C8C9CC;font-size:11px;margin-top:10px;">发布于 {{ fmtTime(product.createTime) }}</div>
+        <div v-if="product.auditRemark" style="margin-top:8px;color:var(--warning);font-size:12px;">审核意见：{{ product.auditRemark }}</div>
+    </div>
+
+    <!-- 卖家卡片 -->
+    <div class="card" style="display:flex;align-items:center;">
+        <div class="avatar" :style="colorStyle(product.sellerAvatarColor)">{{ firstChars(product.sellerNickname) }}</div>
+        <div style="flex:1;margin-left:10px;">
+            <div style="font-size:14px;font-weight:600;">{{ product.sellerNickname }}
+                <span class="tag green" style="margin-left:6px;">信用 {{ product.sellerCredit }}</span>
+            </div>
+            <div style="color:var(--text-light);font-size:12px;margin-top:2px;">已卖出 {{ product.sellerSoldCount }} 件</div>
+        </div>
+        <button class="btn small" :class="{plain: product.followed}" @click="toggleFollow">
+            {{ product.followed ? '已关注' : '+ 关注' }}
+        </button>
+        <button class="btn small plain" style="margin-left:8px;" v-if="product.sellerId !== myId"
+                @click="chatWithSeller">私聊</button>
+    </div>
+
+    <!-- 操作栏 -->
+    <div class="card" style="display:flex;gap:10px;">
+        <button class="btn plain" style="flex:1;" @click="toggleCollect">
+            {{ product.collected ? '⭐ 已收藏' : '☆ 收藏' }}
+        </button>
+        <button class="btn plain" style="flex:1;" @click="toggleLike">
+            {{ product.liked ? '👍 已赞' : '👍 点赞' }}
+        </button>
+        <button class="btn plain" style="flex:1;" @click="showReport = true">⚠️ 举报</button>
+    </div>
+
+    <!-- 购买区 -->
+    <div class="card">
+        <div class="form-item">
+            <label>交付方式</label>
+            <div>
+                <label style="margin-right:16px;font-size:14px;color:var(--text);">
+                    <input type="radio" v-model="orderForm.deliveryType" :value="1"> 校内面交
+                </label>
+                <label style="font-size:14px;color:var(--text);">
+                    <input type="radio" v-model="orderForm.deliveryType" :value="2"> 快递代取
+                </label>
+            </div>
+        </div>
+        <div class="form-item">
+            <label>给卖家留言</label>
+            <input class="form-input" v-model="orderForm.remark" placeholder="如：周五下午图书馆交易可以吗？">
+        </div>
+        <button class="btn block" @click="buy"
+                :disabled="product.status !== 1 || product.sellerId === myId">
+            {{ buyBtnText }}
+        </button>
+    </div>
+
+    <!-- 评价列表 -->
+    <div class="section-title">商品评价（{{ reviews.length }}）</div>
+    <div class="card" style="padding:6px 12px;" v-if="reviews.length">
+        <div v-for="r in reviews" :key="r.id" style="padding:10px 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;">
+                <div class="avatar small" :style="colorStyle(r.reviewerAvatarColor)">{{ firstChars(r.reviewerNickname) }}</div>
+                <div style="margin-left:8px;font-size:13px;">{{ r.reviewerNickname }}</div>
+                <div style="margin-left:auto;color:var(--warning);font-size:12px;">{{ '★'.repeat(r.score) }}</div>
+            </div>
+            <div style="font-size:13px;margin-top:8px;line-height:1.6;">{{ r.content || '此用户没有填写评价内容' }}</div>
+            <div style="color:#C8C9CC;font-size:11px;margin-top:6px;">{{ fmtTime(r.createTime) }}</div>
+        </div>
+    </div>
+    <div class="empty" v-else>暂无评价</div>
+
+    <!-- 举报弹窗 -->
+    <div v-if="showReport" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:12px;padding:18px;width:86%;max-width:400px;">
+            <div style="font-weight:600;margin-bottom:12px;">举报商品</div>
+            <div class="form-item">
+                <label>举报原因</label>
+                <select class="form-input" v-model="reportForm.reason">
+                    <option value="虚假信息">虚假信息</option>
+                    <option value="违禁物品">违禁物品</option>
+                    <option value="价格欺诈">价格欺诈</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+            <div class="form-item">
+                <label>补充说明</label>
+                <textarea class="form-input" v-model="reportForm.description" placeholder="请描述具体问题"></textarea>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn plain" style="flex:1;" @click="showReport = false">取消</button>
+                <button class="btn danger" style="flex:1;" @click="submitReport">提交举报</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    const productId = Number(new URLSearchParams(location.search).get('id'));
+
+    new Vue({
+        el: '#app',
+        data: {
+            product: null,
+            reviews: [],
+            showReport: false,
+            reportForm: { reason: '虚假信息', description: '' },
+            orderForm: { deliveryType: 1, remark: '' },
+            myId: currentUser().id
+        },
+        computed: {
+            buyBtnText() {
+                if (!this.product) return '';
+                if (this.product.sellerId === this.myId) return '这是你发布的商品';
+                const map = { 0: '待审核中', 1: '立即购买', 2: '交易中', 3: '已售出', 4: '已下架', 5: '已驳回' };
+                return map[this.product.status] || '不可购买';
+            }
+        },
+        created() {
+            this.load();
+            this.loadReviews();
+        },
+        methods: {
+            load() {
+                api.get('/student/products/' + productId).then(data => {
+                    this.product = data;
+                    this.orderForm.deliveryType = data.deliveryType || 1;
+                });
+            },
+            loadReviews() {
+                api.get('/student/products/' + productId + '/reviews', { params: { page: 1, pageSize: 20 } })
+                    .then(data => this.reviews = (data && data.records) || []);
+            },
+            needLogin() {
+                if (!isLogin()) { location.href = '/student/login.html'; return true; }
+                return false;
+            },
+            toggleCollect() {
+                if (this.needLogin()) return;
+                const req = this.product.collected
+                    ? api.delete('/student/collects/' + productId)
+                    : api.post('/student/collects/' + productId);
+                req.then(() => {
+                    this.product.collected = !this.product.collected;
+                    this.product.collectCount += this.product.collected ? 1 : -1;
+                });
+            },
+            toggleLike() {
+                if (this.needLogin()) return;
+                const req = this.product.liked
+                    ? api.delete('/student/likes/' + productId)
+                    : api.post('/student/likes/' + productId);
+                req.then(() => {
+                    this.product.liked = !this.product.liked;
+                    this.product.likeCount += this.product.liked ? 1 : -1;
+                });
+            },
+            toggleFollow() {
+                if (this.needLogin()) return;
+                const req = this.product.followed
+                    ? api.delete('/student/follows/' + this.product.sellerId)
+                    : api.post('/student/follows/' + this.product.sellerId);
+                req.then(() => this.product.followed = !this.product.followed);
+            },
+            chatWithSeller() {
+                if (this.needLogin()) return;
+                if (this.product.sellerId === this.myId) {
+                    alert('不能给自己发消息');
+                    return;
+                }
+                location.href = '/student/chat.html?userId=' + this.product.sellerId
+                    + '&nickname=' + encodeURIComponent(this.product.sellerNickname || '');
+            },
+            buy() {
+                if (this.needLogin()) return;
+                if (this.product.status !== 1) return;
+                api.post('/student/orders', {
+                    productId: productId,
+                    deliveryType: this.orderForm.deliveryType,
+                    remark: this.orderForm.remark
+                }).then(order => {
+                    if (confirm('下单成功！订单号：' + order.orderNo + '\n是否立即支付？（模拟支付）')) {
+                        return api.put('/student/orders/' + order.id + '/pay').then(() => {
+                            alert('支付成功！卖家会尽快与你联系');
+                            location.href = '/student/orders.html';
+                        });
+                    }
+                    location.href = '/student/orders.html';
+                });
+            },
+            submitReport() {
+                api.post('/student/reports', {
+                    productId: productId,
+                    reason: this.reportForm.reason,
+                    description: this.reportForm.description
+                }).then(() => {
+                    this.showReport = false;
+                    alert('举报已提交，平台会尽快处理');
+                });
+            }
+        }
+    });
+</script>
+</body>
+</html>

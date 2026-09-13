@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>订单中心</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app">
+    <div class="navbar">订单中心</div>
+
+    <!-- 买家/卖家切换 -->
+    <div style="display:flex;background:#fff;padding:10px 16px;gap:20px;font-size:15px;">
+        <span :style="roleStyle('buy')" @click="switchRole('buy')">我买到的</span>
+        <span :style="roleStyle('sell')" @click="switchRole('sell')">我卖出的</span>
+    </div>
+
+    <!-- 状态筛选 -->
+    <div style="display:flex;background:#fff;overflow-x:auto;font-size:12px;border-top:1px solid var(--border);">
+        <div v-for="tab in tabs" :key="tab.value === null ? 'all' : tab.value"
+             @click="changeTab(tab.value)"
+             :style="{padding:'10px 12px',whiteSpace:'nowrap',cursor:'pointer',
+                      color: status === tab.value ? 'var(--primary)' : 'var(--text-light)',
+                      fontWeight: status === tab.value ? '600' : 'normal'}">
+            {{ tab.name }}
+        </div>
+    </div>
+
+    <!-- 订单列表 -->
+    <div v-for="o in orders" :key="o.id" class="order-card">
+        <div class="order-head">
+            <span>订单号 {{ o.orderNo }}</span>
+            <span class="status">
+                {{ o.statusText }}
+                <span v-if="o.status === 1" style="color:var(--text-light);font-weight:normal;">（15分钟内未支付自动取消）</span>
+            </span>
+        </div>
+        <div class="order-body">
+            <div class="order-cover" :style="colorStyle(o.productCoverColor)" @click="goProduct(o.productId)">
+                {{ firstChars(o.productTitle, 2) }}
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ o.productTitle }}</div>
+                <div style="margin-top:5px;">
+                    <span class="price">{{ o.amount }}</span>
+                    <span class="tag gray" style="margin-left:6px;">{{ deliveryText(o.deliveryType) }}</span>
+                </div>
+                <div style="color:var(--text-light);font-size:11px;margin-top:5px;">
+                    {{ role === 'buy' ? ('卖家：' + (o.sellerNickname || '—')) : ('买家：' + (o.buyerNickname || '—')) }}
+                    · {{ fmtTime(o.createTime) }}
+                </div>
+                <div style="color:var(--text-light);font-size:11px;margin-top:3px;" v-if="o.remark">留言：{{ o.remark }}</div>
+                <div style="color:#EA5455;font-size:11px;margin-top:3px;" v-if="o.cancelReason">取消原因：{{ o.cancelReason }}</div>
+                <div style="color:#E1A200;font-size:11px;margin-top:3px;" v-if="o.refundReason">退款原因：{{ o.refundReason }}</div>
+                <div style="color:var(--text-light);font-size:11px;margin-top:3px;" v-if="o.refundRejectReason">卖家拒绝理由：{{ o.refundRejectReason }}</div>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="order-actions">
+            <!-- 买家操作 -->
+            <template v-if="role === 'buy'">
+                <button class="btn small plain" v-if="o.status === 1" @click="cancelOrder(o)">取消订单</button>
+                <button class="btn small" v-if="o.status === 1" @click="payOrder(o)">立即支付</button>
+                <button class="btn small plain" v-if="o.status === 2" @click="urgeOrder(o)">催发货</button>
+                <button class="btn small plain" v-if="o.status === 2 || o.status === 3" @click="applyRefund(o)">申请退款</button>
+                <button class="btn small green" v-if="o.status === 3" @click="receiveOrder(o)">确认收货</button>
+                <button class="btn small" v-if="o.status === 4 && !o.reviewed" @click="openReview(o)">评价</button>
+                <span v-if="o.status === 4 && o.reviewed" style="color:var(--success);font-size:12px;">已评价</span>
+            </template>
+            <!-- 卖家操作 -->
+            <template v-else>
+                <button class="btn small green" v-if="o.status === 2" @click="deliverOrder(o)">发货</button>
+                <button class="btn small plain" v-if="o.status === 6" @click="handleRefund(o, false)">拒绝退款</button>
+                <button class="btn small danger" v-if="o.status === 6" @click="handleRefund(o, true)">同意退款</button>
+            </template>
+        </div>
+    </div>
+
+    <div class="empty" v-if="!loading && !orders.length">
+        <span class="icon">📋</span>暂无订单
+    </div>
+
+    <!-- 评价弹窗 -->
+    <div v-if="reviewOrder" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:12px;padding:18px;width:86%;max-width:400px;">
+            <div style="font-weight:600;margin-bottom:12px;">评价《{{ reviewOrder.productTitle }}》</div>
+            <div class="form-item">
+                <label>评分</label>
+                <div style="font-size:26px;cursor:pointer;">
+                    <span v-for="n in 5" :key="n" @click="reviewForm.score = n"
+                          :style="{color: n <= reviewForm.score ? '#FDCB6E' : '#DFE6E9'}">★</span>
+                    <span style="font-size:13px;color:var(--text-light);margin-left:8px;">{{ reviewForm.score }} 星</span>
+                </div>
+            </div>
+            <div class="form-item">
+                <label>评价内容</label>
+                <textarea class="form-input" v-model="reviewForm.content" placeholder="说说这次的交易体验吧~"></textarea>
+            </div>
+            <div class="form-item">
+                <label style="display:flex;align-items:center;">
+                    <input type="checkbox" v-model="reviewForm.anonymous" style="margin-right:6px;">匿名评价
+                </label>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn plain" style="flex:1;" @click="reviewOrder = null">取消</button>
+                <button class="btn" style="flex:1;" @click="submitReview">提交评价</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="tabbar">
+        <a href="/student/index.html"><span class="icon">🏠</span>首页</a>
+        <a href="/student/feed.html"><span class="icon">✨</span>动态</a>
+        <a href="/student/publish.html"><span class="icon">➕</span>发布</a>
+        <a href="/student/orders.html" class="active"><span class="icon">📋</span>订单</a>
+        <a href="/student/me.html"><span class="icon">👤</span>我的</a>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    if (requireLogin()) {
+        new Vue({
+            el: '#app',
+            data: {
+                role: new URLSearchParams(location.search).get('role') || 'buy',
+                status: null,
+                orders: [],
+                loading: false,
+                reviewOrder: null,
+                reviewForm: { score: 5, content: '', anonymous: false }
+            },
+            computed: {
+                tabs() {
+                    return [
+                        { name: '全部', value: null },
+                        { name: '待支付', value: 1 },
+                        { name: '待发货', value: 2 },
+                        { name: '待收货', value: 3 },
+                        { name: '已完成', value: 4 },
+                        { name: '退款中', value: 6 }
+                    ];
+                }
+            },
+            created() { this.load(); },
+            methods: {
+                load() {
+                    this.loading = true;
+                    const url = this.role === 'buy' ? '/student/my/orders/bought' : '/student/my/orders/sold';
+                    api.get(url, {
+                        params: { status: this.status === null ? undefined : this.status, page: 1, pageSize: 50 }
+                    }).then(data => this.orders = (data && data.records) || [])
+                        .finally(() => this.loading = false);
+                },
+                switchRole(r) { this.role = r; this.load(); },
+                changeTab(v) { this.status = v; this.load(); },
+                roleStyle(r) {
+                    return this.role === r
+                        ? { color: 'var(--primary)', fontWeight: '600', borderBottom: '2px solid var(--primary)', paddingBottom: '6px' }
+                        : { color: 'var(--text-light)', paddingBottom: '6px' };
+                },
+                goProduct(id) { location.href = '/student/product-detail.html?id=' + id; },
+                payOrder(o) {
+                    api.put('/student/orders/' + o.id + '/pay').then(() => { alert('支付成功！'); this.load(); });
+                },
+                cancelOrder(o) {
+                    if (!confirm('确定取消该订单吗？')) return;
+                    api.put('/student/orders/' + o.id + '/cancel').then(() => { alert('已取消'); this.load(); });
+                },
+                urgeOrder(o) {
+                    api.put('/student/orders/' + o.id + '/urge').then(() => alert('已提醒卖家尽快发货'));
+                },
+                receiveOrder(o) {
+                    if (!confirm('确认已收到商品？确认后交易完成。')) return;
+                    api.put('/student/orders/' + o.id + '/receive').then(() => { alert('交易完成！'); this.load(); });
+                },
+                applyRefund(o) {
+                    const reason = prompt('请填写退款原因：', '不想要了');
+                    if (reason === null) return;
+                    api.post('/student/orders/' + o.id + '/refund', null, { params: { reason } })
+                        .then(() => { alert('退款申请已提交，等待卖家处理'); this.load(); });
+                },
+                deliverOrder(o) {
+                    if (!confirm('确认已发货/已交付？')) return;
+                    api.put('/student/orders/' + o.id + '/deliver').then(() => { alert('已发货'); this.load(); });
+                },
+                handleRefund(o, agree) {
+                    let rejectReason;
+                    if (!agree) {
+                        rejectReason = prompt('请填写拒绝退款的理由：', '商品已交付');
+                        if (rejectReason === null) return;
+                    }
+                    api.put('/student/orders/' + o.id + '/refund/handle', { agree, rejectReason })
+                        .then(() => { alert(agree ? '已同意退款' : '已拒绝退款'); this.load(); });
+                },
+                openReview(o) {
+                    this.reviewOrder = o;
+                    this.reviewForm = { score: 5, content: '', anonymous: false };
+                },
+                submitReview() {
+                    api.post('/student/orders/' + this.reviewOrder.id + '/review', {
+                        score: this.reviewForm.score,
+                        content: this.reviewForm.content,
+                        isAnonymous: this.reviewForm.anonymous ? 1 : 0
+                    }).then(() => {
+                        this.reviewOrder = null;
+                        alert('评价成功，感谢反馈！');
+                        this.load();
+                    });
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

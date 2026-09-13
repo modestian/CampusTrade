@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>发布商品</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+</head>
+<body>
+<div id="app" class="app">
+    <div class="navbar">
+        <span class="back" @click="goBack('/student/index.html')">‹ 返回</span>
+        {{ editId ? '编辑商品' : '发布闲置' }}
+    </div>
+
+    <div class="card">
+        <div class="form-item">
+            <label>商品封面（色块）</label>
+            <div style="display:flex;gap:12px;align-items:center;">
+                <div class="product-cover" style="width:110px;height:90px;border-radius:8px;font-size:20px;"
+                     :style="colorStyle(form.coverColor)">
+                    {{ firstChars(form.title || '闲置', 2) }}
+                </div>
+                <div class="color-picker" style="flex:1;">
+                    <div v-for="c in colors" :key="c" class="color-dot"
+                         :class="{active: form.coverColor === c}"
+                         :style="{backgroundColor: c}" @click="form.coverColor = c"></div>
+                </div>
+            </div>
+        </div>
+        <div class="form-item">
+            <label>商品标题 *</label>
+            <input class="form-input" v-model="form.title" placeholder="如：《数据结构》教材 / 小米台灯">
+        </div>
+        <div class="form-item">
+            <label>商品描述</label>
+            <textarea class="form-input" v-model="form.description" placeholder="新旧程度、购买时间、使用情况、交易要求..."></textarea>
+        </div>
+        <div class="form-item">
+            <label>分类 *</label>
+            <select class="form-input" v-model="form.categoryId">
+                <option :value="null" disabled>请选择分类</option>
+                <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+            </select>
+        </div>
+        <div style="display:flex;gap:12px;">
+            <div class="form-item" style="flex:1;">
+                <label>出售价（¥）*</label>
+                <input class="form-input" type="number" min="0.01" step="0.01" v-model="form.price" placeholder="0.00">
+            </div>
+            <div class="form-item" style="flex:1;">
+                <label>购入原价（¥）</label>
+                <input class="form-input" type="number" min="0" step="0.01" v-model="form.originalPrice" placeholder="选填">
+            </div>
+        </div>
+        <div class="form-item">
+            <label>成色 *</label>
+            <select class="form-input" v-model="form.conditionLevel">
+                <option :value="1">全新</option>
+                <option :value="2">几乎全新</option>
+                <option :value="3">轻微使用痕迹</option>
+                <option :value="4">明显使用痕迹</option>
+                <option :value="5">磨损明显</option>
+            </select>
+        </div>
+        <div class="form-item">
+            <label>交付方式</label>
+            <div>
+                <label style="margin-right:16px;font-size:14px;color:var(--text);">
+                    <input type="radio" v-model="form.deliveryType" :value="1"> 校内面交
+                </label>
+                <label style="font-size:14px;color:var(--text);">
+                    <input type="radio" v-model="form.deliveryType" :value="2"> 快递代取
+                </label>
+            </div>
+        </div>
+        <div class="form-item">
+            <label>面交地点</label>
+            <input class="form-input" v-model="form.campus" placeholder="如：三号教学楼门口 / 竹园3栋楼下">
+        </div>
+        <button class="btn block" @click="submit" :disabled="submitting">
+            {{ editId ? '保存修改' : '提交审核' }}
+        </button>
+        <div style="text-align:center;color:var(--text-light);font-size:12px;margin-top:10px;">
+            提交后需管理员审核通过才会展示在首页
+        </div>
+    </div>
+
+    <div class="tabbar">
+        <a href="/student/index.html"><span class="icon">🏠</span>首页</a>
+        <a href="/student/feed.html"><span class="icon">✨</span>动态</a>
+        <a href="/student/publish.html" class="active"><span class="icon">➕</span>发布</a>
+        <a href="/student/orders.html"><span class="icon">📋</span>订单</a>
+        <a href="/student/me.html"><span class="icon">👤</span>我的</a>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    if (requireLogin()) {
+        const editId = new URLSearchParams(location.search).get('id');
+
+        new Vue({
+            el: '#app',
+            data: {
+                editId: editId ? Number(editId) : null,
+                categories: [],
+                submitting: false,
+                colors: ['#FF7675', '#74B9FF', '#55EFC4', '#A29BFE', '#FAB1A0', '#FFEAA7', '#81ECEC', '#DFE6E9', '#FDCB6E', '#6C5CE7'],
+                form: {
+                    title: '', description: '', categoryId: null, coverColor: '#74B9FF',
+                    price: '', originalPrice: '', conditionLevel: 3, deliveryType: 1, campus: ''
+                }
+            },
+            created() {
+                api.get('/student/categories').then(data => this.categories = data || []);
+                if (this.editId) {
+                    api.get('/student/products/' + this.editId).then(data => {
+                        this.form = {
+                            title: data.title, description: data.description, categoryId: data.categoryId,
+                            coverColor: data.coverColor, price: data.price, originalPrice: data.originalPrice,
+                            conditionLevel: data.conditionLevel, deliveryType: data.deliveryType, campus: data.campus
+                        };
+                    });
+                }
+            },
+            methods: {
+                submit() {
+                    if (!this.form.title || !this.form.price || !this.form.categoryId) {
+                        alert('请填写标题、价格和分类');
+                        return;
+                    }
+                    this.submitting = true;
+                    const payload = Object.assign({}, this.form);
+                    const req = this.editId
+                        ? api.put('/student/my/products/' + this.editId, payload)
+                        : api.post('/student/products', payload);
+                    req.then(() => {
+                        alert(this.editId ? '修改成功，审核通过后展示' : '发布成功，等待管理员审核');
+                        location.href = '/student/my-products.html';
+                    }).finally(() => this.submitting = false);
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

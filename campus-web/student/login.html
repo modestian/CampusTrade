@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>登录 - 校园二手交易平台</title>
+    <link rel="stylesheet" href="/campus-static/css/style.css?v=4">
+    <style>
+        .login-hero { text-align: center; padding: 60px 0 30px; }
+        .login-hero .logo {
+            width: 72px; height: 72px; border-radius: 20px; margin: 0 auto 14px;
+            background: var(--primary); color: #fff; font-size: 30px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 6px 18px rgba(255, 118, 117, .4);
+        }
+        .login-hero h1 { font-size: 20px; }
+        .login-hero p { color: var(--text-light); font-size: 13px; margin-top: 6px; }
+        .login-card { margin: 0 20px; background: #fff; border-radius: 14px; padding: 22px 18px; }
+        .tab-switch { display: flex; margin-bottom: 20px; }
+        .tab-switch div {
+            flex: 1; text-align: center; padding: 8px 0; font-size: 15px;
+            color: var(--text-light); cursor: pointer;
+        }
+        .tab-switch div.active { color: var(--primary); font-weight: 600; border-bottom: 2px solid var(--primary); }
+    </style>
+</head>
+<body>
+<div id="app" class="app" style="padding-bottom: 0;">
+    <div class="login-hero">
+        <div class="logo">校</div>
+        <h1>校园二手交易平台</h1>
+        <p>让闲置流动起来 · 校内面交更放心</p>
+    </div>
+
+    <div class="login-card">
+        <div class="tab-switch">
+            <div :class="{active: mode === 'login'}" @click="mode = 'login'">登录</div>
+            <div :class="{active: mode === 'register'}" @click="mode = 'register'">注册</div>
+        </div>
+
+        <div class="form-item">
+            <input class="form-input" v-model="form.username" placeholder="学号（6~12位数字）">
+        </div>
+        <div class="form-item" v-if="mode === 'register'">
+            <input class="form-input" v-model="form.nickname" placeholder="昵称">
+        </div>
+        <div class="form-item">
+            <input class="form-input" type="password" v-model="form.password" placeholder="密码（6~20位）">
+        </div>
+        <div class="form-item" v-if="mode === 'register'">
+            <div style="font-size:13px;color:var(--text-light);margin-bottom:8px;">选择头像色块</div>
+            <div class="color-picker">
+                <div v-for="c in colors" :key="c" class="color-dot"
+                     :class="{active: form.avatarColor === c}"
+                     :style="{backgroundColor: c}" @click="form.avatarColor = c"></div>
+            </div>
+        </div>
+
+        <button class="btn block" @click="submit" :disabled="loading">
+            {{ mode === 'login' ? '登 录' : '注册并登录' }}
+        </button>
+        <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--text-light);">
+            测试账号：20230001 / 123456
+        </div>
+    </div>
+</div>
+
+<script src="/campus-static/lib/axios.min.js"></script>
+<script src="/campus-static/lib/vue.js"></script>
+<script src="/campus-static/js/app.js?v=4"></script>
+<script>
+    new Vue({
+        el: '#app',
+        data: {
+            mode: 'login',
+            loading: false,
+            form: { username: '', nickname: '', password: '', avatarColor: '#74B9FF' },
+            colors: ['#FF7675', '#74B9FF', '#55EFC4', '#A29BFE', '#FAB1A0', '#FFEAA7', '#81ECEC', '#6C5CE7']
+        },
+        methods: {
+            submit() {
+                if (!this.form.username || !this.form.password) {
+                    alert('请填写学号和密码');
+                    return;
+                }
+                if (this.mode === 'register' && !this.form.nickname) {
+                    alert('请填写昵称');
+                    return;
+                }
+                this.loading = true;
+                const url = this.mode === 'login' ? '/student/login' : '/student/register';
+                api.post(url, this.form).then(data => {
+                    saveLogin(data);
+                    location.href = '/student/index.html';
+                }).finally(() => this.loading = false);
+            }
+        }
+    });
+</script>
+</body>
+</html>
