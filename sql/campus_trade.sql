@@ -99,6 +99,7 @@ DROP TABLE IF EXISTS tb_order;
 CREATE TABLE tb_order (
     id                   BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键',
     order_no             VARCHAR(32)   NOT NULL COMMENT '订单号',
+    request_id           VARCHAR(64)   DEFAULT NULL COMMENT '客户端下单幂等键',
     product_id           BIGINT        NOT NULL COMMENT '商品ID',
     buyer_id             BIGINT        NOT NULL COMMENT '买家ID',
     seller_id            BIGINT        NOT NULL COMMENT '卖家ID',
@@ -117,11 +118,16 @@ CREATE TABLE tb_order (
     update_time          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_order_no (order_no),
+    UNIQUE KEY uk_order_request (buyer_id, product_id, request_id),
     KEY idx_buyer (buyer_id),
     KEY idx_seller (seller_id),
     KEY idx_status (status),
     KEY idx_product (product_id)
 ) ENGINE = InnoDB COMMENT = '订单表';
+
+-- 已有数据库增量升级（仅执行一次，不要执行整份初始化脚本）：
+-- ALTER TABLE tb_order ADD COLUMN request_id VARCHAR(64) DEFAULT NULL COMMENT '客户端下单幂等键' AFTER order_no;
+-- ALTER TABLE tb_order ADD UNIQUE KEY uk_order_request (buyer_id, product_id, request_id);
 
 -- ------------------------------------------------------------
 -- 5A. MQ 可靠消息 Outbox

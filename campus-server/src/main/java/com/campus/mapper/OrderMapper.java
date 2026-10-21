@@ -12,6 +12,13 @@ import org.apache.ibatis.annotations.Param;
 public interface OrderMapper extends BaseMapper<ProductOrder> {
 
     /**
+     * 按幂等键查询并使用当前读，确保锁等待后能看到其他事务刚提交的订单。
+     */
+    ProductOrder selectByIdempotencyKeyForUpdate(@Param("buyerId") Long buyerId,
+                                                  @Param("productId") Long productId,
+                                                  @Param("requestId") String requestId);
+
+    /**
      * 订单分页（联查商品/买家/卖家），买卖双方与管理端共用
      */
     IPage<OrderVO> pageOrders(IPage<OrderVO> page,

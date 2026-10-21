@@ -11,7 +11,7 @@
 ### 学生端（买家侧）
 - 商品浏览：分类筛选、关键词搜索、最新 / 热度 / 价格排序、热门榜（Redis ZSet）
 - 商品详情：浏览量统计、收藏、点赞、评价列表、举报
-- 下单交易：防超卖下单（Redisson 锁 + DB CAS）、模拟支付、确认收货、退款申请
+- 下单交易：防超卖（Redisson 锁 + DB CAS）、requestId 严格幂等、模拟支付、确认收货、退款申请
 - 社交互动：关注 / 粉丝、共同关注、点赞、**关注动态 Feed 流**（推模式 + 滚动分页）
 - 实时消息：WebSocket 私聊、订单状态实时提醒
 
@@ -171,6 +171,7 @@ java -jar target/campus-server.jar
 | 能力 | 实现方案 |
 |---|---|
 | **防超卖** | Redisson 分布式锁 `lock:order:{productId}` + 数据库 CAS（`UPDATE ... WHERE status=1`），双重保障 |
+| **下单幂等** | 客户端一次下单复用同一 `requestId`；服务端锁内当前读返回原订单；`(buyer_id, product_id, request_id)` 唯一索引兜底 |
 | **缓存三兄弟** | 空值缓存防穿透 / Redisson 互斥锁重建防击穿 / 随机 TTL 防雪崩 |
 | **唯一订单号** | RedisIdWorker：`yyyyMMdd` + Redis INCR 12 位序列（分布式安全） |
 | **超时订单** | MySQL Transactional Outbox + RabbitMQ TTL/DLX；Publisher Confirm、手动 ACK、延迟重试与死信队列，消费端 CAS 幂等 |

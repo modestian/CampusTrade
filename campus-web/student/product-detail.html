@@ -86,7 +86,7 @@
             <input class="form-input" v-model="orderForm.remark" placeholder="如：周五下午图书馆交易可以吗？">
         </div>
         <button class="btn block" @click="buy"
-                :disabled="product.status !== 1 || product.sellerId === myId">
+                :disabled="submitting || product.status !== 1 || product.sellerId === myId">
             {{ buyBtnText }}
         </button>
     </div>
@@ -145,11 +145,14 @@
             showReport: false,
             reportForm: { reason: '虚假信息', description: '' },
             orderForm: { deliveryType: 1, remark: '' },
+            orderRequestId: null,
+            submitting: false,
             myId: currentUser().id
         },
         computed: {
             buyBtnText() {
                 if (!this.product) return '';
+                if (this.submitting) return '提交中...';
                 if (this.product.sellerId === this.myId) return '这是你发布的商品';
                 const map = { 0: '待审核中', 1: '立即购买', 2: '交易中', 3: '已售出', 4: '已下架', 5: '已驳回' };
                 return map[this.product.status] || '不可购买';
@@ -212,8 +215,18 @@
             },
             buy() {
                 if (this.needLogin()) return;
-                if (this.product.status !== 1) return;
+                if (this.product.status !== 1 || this.submitting) return;
+                // 网络超时或失败后保留同一个 requestId；再次点击会获得第一次创建的订单。
+                if (!this.orderRequestId) {
+                    this.orderRequestId = window.crypto && window.crypto.randomUUID
+                        ? window.crypto.randomUUID()
+                        : 'order-' + Date.now().toString(36) + '-'
+                            + Math.random().toString(36).substring(2)
+                            + Math.random().toString(36).substring(2);
+                }
+                this.submitting = true;
                 api.post('/student/orders', {
+                    requestId: this.orderRequestId,
                     productId: productId,
                     deliveryType: this.orderForm.deliveryType,
                     remark: this.orderForm.remark
@@ -225,7 +238,7 @@
                         });
                     }
                     location.href = '/student/orders.html';
-                });
+                }).finally(() => this.submitting = false);
             },
             submitReport() {
                 api.post('/student/reports', {

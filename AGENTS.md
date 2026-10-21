@@ -54,6 +54,7 @@ scripts/        api-test.ps1 冒烟测试（19 项断言）
 | 能力 | 实现位置 | 要点 |
 |---|---|---|
 | 防超卖 | `OrderServiceImpl.submit` + `ProductMapper.casOnSaleToTrading` | Redisson 锁 `lock:order:{id}` + DB CAS（`WHERE status=1`），**双重保障，缺一不可** |
+| 下单幂等 | `OrderSubmitDTO.requestId` + `OrderMapper.selectByIdempotencyKeyForUpdate` | 客户端同一次下单复用 requestId；幂等查询须在商品锁内且为事务首次 DB 读取；DB 唯一索引最终兜底 |
 | 缓存三兄弟 | `ProductServiceImpl.getDetail` | 空值缓存防穿透 / Redisson 锁重建防击穿 / 随机 TTL 防雪崩 |
 | 订单号 | `RedisIdWorker` | `yyyyMMdd` + Redis INCR，分布式安全 |
 | 超时取消 | `MqOutboxPublishTask` + RabbitMQ TTL/DLX + `OrderTimeoutConsumer` | 订单与 Outbox 同事务；Confirm 后标记发送；手动 ACK、重试、死信、CAS 幂等；可切回 Redis |

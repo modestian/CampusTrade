@@ -25,6 +25,9 @@ public class ProductOrder implements Serializable {
     /** 订单号（RedisIdWorker 生成） */
     private String orderNo;
 
+    /** 客户端请求幂等键 */
+    private String requestId;
+
     /** 商品 ID */
     private Long productId;
 

@@ -104,20 +104,14 @@ public class OrderServiceImpl implements OrderService {
         if (dto.getProductId() == null) {
             throw new BusinessException("商品 ID 不能为空");
         }
+        if (StrUtil.isBlank(dto.getRequestId()) || dto.getRequestId().trim().length() > 64) {
+            throw new BusinessException("下单请求标识不能为空且不能超过 64 个字符");
+        }
+        String requestId = dto.getRequestId().trim();
         Long buyerId = UserContext.getUserId();
-        Product product = productMapper.selectById(dto.getProductId());
-        if (product == null) {
-            throw new BusinessException(MessageConstant.PRODUCT_NOT_FOUND);
-        }
-        if (!ProductStatus.ON_SALE.getValue().equals(product.getStatus())) {
-            throw new BusinessException(MessageConstant.PRODUCT_NOT_ON_SALE);
-        }
-        if (product.getSellerId().equals(buyerId)) {
-            throw new BusinessException(MessageConstant.CANNOT_BUY_OWN);
-        }
 
-        // 分布式锁：串行化同一商品的下单请求
-        RLock lock = redissonClient.getLock(RedisConstants.LOCK_ORDER_KEY + product.getId());
+        // 必须在首次数据库读取前获取商品锁：等待锁后才能看到前一个请求已提交的订单。
+        RLock lock = redissonClient.getLock(RedisConstants.LOCK_ORDER_KEY + dto.getProductId());
         boolean locked = false;
         boolean unlockAfterCommit = false;
         try {
@@ -125,6 +119,25 @@ public class OrderServiceImpl implements OrderService {
             if (!locked) {
                 throw new BusinessException("当前抢购人数较多，请稍后再试");
             }
+
+            // 相同请求重试直接返回第一次创建的订单，形成“同请求、同结果”的严格幂等语义。
+            ProductOrder existing = orderMapper.selectByIdempotencyKeyForUpdate(
+                    buyerId, dto.getProductId(), requestId);
+            if (existing != null) {
+                return buildOrderVO(existing);
+            }
+
+            Product product = productMapper.selectById(dto.getProductId());
+            if (product == null) {
+                throw new BusinessException(MessageConstant.PRODUCT_NOT_FOUND);
+            }
+            if (!ProductStatus.ON_SALE.getValue().equals(product.getStatus())) {
+                throw new BusinessException(MessageConstant.PRODUCT_NOT_ON_SALE);
+            }
+            if (product.getSellerId().equals(buyerId)) {
+                throw new BusinessException(MessageConstant.CANNOT_BUY_OWN);
+            }
+
             // CAS 最终防线：在售(1) -> 交易中(2)
             int rows = productMapper.casOnSaleToTrading(product.getId());
             if (rows == 0) {
@@ -133,6 +146,7 @@ public class OrderServiceImpl implements OrderService {
 
             ProductOrder order = new ProductOrder();
             order.setOrderNo(redisIdWorker.nextOrderNo());
+            order.setRequestId(requestId);
             order.setProductId(product.getId());
             order.setBuyerId(buyerId);
             order.setSellerId(product.getSellerId());
