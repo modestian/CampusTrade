@@ -51,7 +51,7 @@
         </div>
 
         <div class="chat-input-bar">
-            <input v-model="inputText" @keyup.enter="send" placeholder="输入消息...">
+            <input v-model="inputText" maxlength="512" @keyup.enter="send" placeholder="输入消息...">
             <button class="btn" @click="send">发送</button>
         </div>
     </template>
@@ -163,6 +163,10 @@
                 send() {
                     const text = this.inputText.trim();
                     if (!text) return;
+                    if (text.length > 512) {
+                        this.showToast('消息不能超过 512 字');
+                        return;
+                    }
                     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                         alert('连接已断开，正在重连…');
                         this.connectWs();

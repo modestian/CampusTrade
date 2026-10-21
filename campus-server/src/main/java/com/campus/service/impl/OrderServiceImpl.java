@@ -2,6 +2,7 @@ package com.campus.service.impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.campus.common.constant.MessageConstant;
@@ -32,9 +33,13 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
@@ -71,6 +76,10 @@ public class OrderServiceImpl implements OrderService {
     @Resource
     private RedisIdWorker redisIdWorker;
 
+    /** 用于获取自身代理：同类内自调用不经过事务代理，REQUIRES_NEW 等传播行为会失效 */
+    @Resource
+    private ApplicationContext applicationContext;
+
     @Value("${campus.order.pay-timeout-minutes:15}")
     private long payTimeoutMinutes;
 
@@ -99,8 +108,10 @@ public class OrderServiceImpl implements OrderService {
 
         // 分布式锁：串行化同一商品的下单请求
         RLock lock = redissonClient.getLock(RedisConstants.LOCK_ORDER_KEY + product.getId());
+        boolean locked = false;
+        boolean unlockAfterCommit = false;
         try {
-            boolean locked = lock.tryLock(3, 10, TimeUnit.SECONDS);
+            locked = lock.tryLock(3, 10, TimeUnit.SECONDS);
             if (!locked) {
                 throw new BusinessException("当前抢购人数较多，请稍后再试");
             }
@@ -131,12 +142,25 @@ public class OrderServiceImpl implements OrderService {
             WebSocketServer.sendToUser(product.getSellerId(), WsMessageType.NEW_ORDER.name(),
                     "买家已下单《" + product.getTitle() + "》，等待付款");
 
+            // 正常路径：锁延迟到事务提交后再释放，消除“锁已释放、事务未提交”的窗口
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (lock.isHeldByCurrentThread()) {
+                            lock.unlock();
+                        }
+                    }
+                });
+                unlockAfterCommit = true;
+            }
             return buildOrderVO(order);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(MessageConstant.UNKNOWN_ERROR);
         } finally {
-            if (lock.isHeldByCurrentThread()) {
+            // 异常或无事务路径立即释放；正常路径由事务完成后回调释放
+            if (locked && !unlockAfterCommit && lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
         }
@@ -153,14 +177,21 @@ public class OrderServiceImpl implements OrderService {
         // 超时校验（任务可能存在延迟）
         if (order.getCreateTime() != null
                 && order.getCreateTime().plusMinutes(payTimeoutMinutes).isBefore(LocalDateTime.now())) {
-            doCancel(order, "超时未支付，系统自动取消");
+            // 取消必须在独立事务（REQUIRES_NEW）中完成：
+            // 若与当前事务共用，随后抛出的“支付超时”异常回滚会把取消与商品回滚一并撤销
+            applicationContext.getBean(OrderService.class).cancelTimeoutOrder(id);
             throw new BusinessException(MessageConstant.PAY_TIMEOUT);
         }
         ProductOrder update = new ProductOrder();
-        update.setId(id);
         update.setStatus(OrderStatus.PENDING_DELIVERY.getValue());
         update.setPayTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        // CAS：仅当仍为待支付时才允许置为已支付（与超时取消并发时唯一赢家）
+        int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, id)
+                .eq(ProductOrder::getStatus, OrderStatus.PENDING_PAYMENT.getValue()));
+        if (rows == 0) {
+            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
         WebSocketServer.sendToUser(order.getSellerId(), WsMessageType.ORDER_PAID.name(),
                 "订单 " + order.getOrderNo() + " 已付款，请尽快发货");
     }
@@ -173,7 +204,9 @@ public class OrderServiceImpl implements OrderService {
         if (!OrderStatus.PENDING_PAYMENT.getValue().equals(order.getStatus())) {
             throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
-        doCancel(order, "买家主动取消");
+        if (!doCancel(order, "买家主动取消")) {
+            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
     }
 
     @Override
@@ -185,10 +218,15 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
         ProductOrder update = new ProductOrder();
-        update.setId(id);
         update.setStatus(OrderStatus.PENDING_RECEIVE.getValue());
         update.setDeliverTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        // CAS：仅当仍为待发货时才允许置为待收货
+        int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, id)
+                .eq(ProductOrder::getStatus, OrderStatus.PENDING_DELIVERY.getValue()));
+        if (rows == 0) {
+            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
         WebSocketServer.sendToUser(order.getBuyerId(), WsMessageType.ORDER_DELIVERED.name(),
                 "卖家已发货，订单 " + order.getOrderNo() + "，请及时确认收货");
     }
@@ -202,12 +240,18 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
         ProductOrder update = new ProductOrder();
-        update.setId(id);
         update.setStatus(OrderStatus.COMPLETED.getValue());
         update.setReceiveTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        // CAS：仅当仍为待收货时才允许置为已完成
+        int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, id)
+                .eq(ProductOrder::getStatus, OrderStatus.PENDING_RECEIVE.getValue()));
+        if (rows == 0) {
+            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
         // 商品：交易中 -> 已售出
-        productMapper.casTradingToSold(order.getProductId());
+        checkProductCas(productMapper.casTradingToSold(order.getProductId()),
+                order.getId(), order.getProductId(), "交易中 -> 已售出");
         stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + order.getProductId());
         WebSocketServer.sendToUser(order.getSellerId(), WsMessageType.ORDER_RECEIVED.name(),
                 "买家已确认收货，订单 " + order.getOrderNo() + " 交易完成，别忘了给个评价哦");
@@ -234,10 +278,16 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
         ProductOrder update = new ProductOrder();
-        update.setId(id);
         update.setStatus(OrderStatus.REFUNDING.getValue());
         update.setRefundReason(StrUtil.isBlank(reason) ? "买家申请退款" : reason);
-        orderMapper.updateById(update);
+        // CAS：仅当待发货/待收货时才允许进入退款中
+        int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, id)
+                .in(ProductOrder::getStatus,
+                        OrderStatus.PENDING_DELIVERY.getValue(), OrderStatus.PENDING_RECEIVE.getValue()));
+        if (rows == 0) {
+            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
         WebSocketServer.sendToUser(order.getSellerId(), WsMessageType.REFUND_APPLY.name(),
                 "买家申请退款：订单 " + order.getOrderNo() + "，原因：" + update.getRefundReason());
     }
@@ -251,13 +301,19 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
         ProductOrder update = new ProductOrder();
-        update.setId(id);
         boolean agree = Boolean.TRUE.equals(dto.getAgree());
+        // CAS：仅当仍为退款中时才允许处理（与买家/平台并发操作时唯一赢家）
+        LambdaUpdateWrapper<ProductOrder> cas = new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, id)
+                .eq(ProductOrder::getStatus, OrderStatus.REFUNDING.getValue());
         if (agree) {
             // 同意退款：订单已退款，商品恢复在售
             update.setStatus(OrderStatus.REFUNDED.getValue());
-            orderMapper.updateById(update);
-            productMapper.casTradingToOnSale(order.getProductId());
+            if (orderMapper.update(update, cas) == 0) {
+                throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+            }
+            checkProductCas(productMapper.casTradingToOnSale(order.getProductId()),
+                    order.getId(), order.getProductId(), "交易中 -> 在售");
             stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + order.getProductId());
             WebSocketServer.sendToUser(order.getBuyerId(), WsMessageType.REFUND_RESULT.name(),
                     "卖家已同意退款，订单 " + order.getOrderNo() + " 退款成功");
@@ -270,7 +326,9 @@ public class OrderServiceImpl implements OrderService {
                     ? OrderStatus.PENDING_DELIVERY.getValue()
                     : OrderStatus.PENDING_RECEIVE.getValue());
             update.setRefundRejectReason(dto.getRejectReason());
-            orderMapper.updateById(update);
+            if (orderMapper.update(update, cas) == 0) {
+                throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+            }
             WebSocketServer.sendToUser(order.getBuyerId(), WsMessageType.REFUND_RESULT.name(),
                     "卖家拒绝了退款申请：" + dto.getRejectReason());
         }
@@ -309,12 +367,14 @@ public class OrderServiceImpl implements OrderService {
     /* ==================== 定时任务 ==================== */
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancelTimeoutOrder(Long orderId) {
         ProductOrder order = orderMapper.selectById(orderId);
         if (order == null || !OrderStatus.PENDING_PAYMENT.getValue().equals(order.getStatus())) {
             return;
         }
+        // REQUIRES_NEW：支付入口在抛“支付超时”异常前调用本方法，
+        // 取消需独立提交，不能被外层事务的回滚撤销；CAS 失败说明已被其他路径处理，幂等忽略
         doCancel(order, "超时未支付，系统自动取消");
     }
 
@@ -322,22 +382,32 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public int autoReceiveOrders() {
         LocalDateTime deadline = LocalDateTime.now().minusDays(autoReceiveDays);
+        // 分批处理，避免一次扫描过多订单（未处理的下一轮任务继续）
         List<ProductOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<ProductOrder>()
                 .eq(ProductOrder::getStatus, OrderStatus.PENDING_RECEIVE.getValue())
                 .isNotNull(ProductOrder::getDeliverTime)
-                .le(ProductOrder::getDeliverTime, deadline));
+                .le(ProductOrder::getDeliverTime, deadline)
+                .last("LIMIT 200"));
+        int processed = 0;
         for (ProductOrder order : orders) {
             ProductOrder update = new ProductOrder();
-            update.setId(order.getId());
             update.setStatus(OrderStatus.COMPLETED.getValue());
             update.setReceiveTime(LocalDateTime.now());
-            orderMapper.updateById(update);
-            productMapper.casTradingToSold(order.getProductId());
+            // CAS：仅当仍为待收货时才自动完成（并发下用户可能已手动确认收货）
+            int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                    .eq(ProductOrder::getId, order.getId())
+                    .eq(ProductOrder::getStatus, OrderStatus.PENDING_RECEIVE.getValue()));
+            if (rows == 0) {
+                continue;
+            }
+            checkProductCas(productMapper.casTradingToSold(order.getProductId()),
+                    order.getId(), order.getProductId(), "交易中 -> 已售出");
             stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + order.getProductId());
             WebSocketServer.sendToUser(order.getSellerId(), WsMessageType.ORDER_RECEIVED.name(),
                     "订单 " + order.getOrderNo() + " 已超时自动确认收货");
+            processed++;
         }
-        return orders.size();
+        return processed;
     }
 
     /* ==================== 管理端 ==================== */
@@ -360,18 +430,20 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public void adminClose(Long id, String reason) {
         ProductOrder order = getOrder(id);
-        if (OrderStatus.COMPLETED.getValue().equals(order.getStatus())
-                || OrderStatus.CANCELED.getValue().equals(order.getStatus())
-                || OrderStatus.REFUNDED.getValue().equals(order.getStatus())) {
-            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
-        }
         ProductOrder update = new ProductOrder();
-        update.setId(id);
         update.setStatus(OrderStatus.CANCELED.getValue());
         update.setCancelReason("平台关闭：" + (StrUtil.isBlank(reason) ? "纠纷处理" : reason));
         update.setCancelTime(LocalDateTime.now());
-        orderMapper.updateById(update);
-        productMapper.casTradingToOnSale(order.getProductId());
+        // CAS：已完成/已取消/已退款的终态订单不可关闭（并发变化同样拒绝）
+        int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, id)
+                .notIn(ProductOrder::getStatus, OrderStatus.COMPLETED.getValue(),
+                        OrderStatus.CANCELED.getValue(), OrderStatus.REFUNDED.getValue()));
+        if (rows == 0) {
+            throw new BusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        }
+        checkProductCas(productMapper.casTradingToOnSale(order.getProductId()),
+                order.getId(), order.getProductId(), "交易中 -> 在售");
         stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + order.getProductId());
         // 双向通知
         WebSocketServer.sendToUser(order.getBuyerId(), WsMessageType.ORDER_CANCELED.name(),
@@ -382,19 +454,36 @@ public class OrderServiceImpl implements OrderService {
 
     /* ==================== 私有方法 ==================== */
 
-    /** 取消订单并回滚商品（买家取消 / 超时取消共用） */
-    private void doCancel(ProductOrder order, String reason) {
+    /**
+     * 取消订单并回滚商品（买家取消 / 超时取消共用）
+     * @return true 表示本次取消生效；false 表示订单已被其他路径处理（支付/取消），幂等忽略
+     */
+    private boolean doCancel(ProductOrder order, String reason) {
         ProductOrder update = new ProductOrder();
-        update.setId(order.getId());
         update.setStatus(OrderStatus.CANCELED.getValue());
         update.setCancelReason(reason);
         update.setCancelTime(LocalDateTime.now());
-        orderMapper.updateById(update);
+        // CAS：仅当仍为待支付时才允许取消（与支付/其他取消路径并发时唯一赢家）
+        int rows = orderMapper.update(update, new LambdaUpdateWrapper<ProductOrder>()
+                .eq(ProductOrder::getId, order.getId())
+                .eq(ProductOrder::getStatus, OrderStatus.PENDING_PAYMENT.getValue()));
+        if (rows == 0) {
+            return false;
+        }
         // 商品回滚：交易中 -> 在售
-        productMapper.casTradingToOnSale(order.getProductId());
+        checkProductCas(productMapper.casTradingToOnSale(order.getProductId()),
+                order.getId(), order.getProductId(), "交易中 -> 在售");
         stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + order.getProductId());
         WebSocketServer.sendToUser(order.getSellerId(), WsMessageType.ORDER_CANCELED.name(),
                 "订单 " + order.getOrderNo() + " 已取消（" + reason + "），商品重新上架");
+        return true;
+    }
+
+    /** 检查商品状态 CAS 影响行数（0 = 商品不在预期状态，记录日志暴露不一致，不影响订单流转） */
+    private void checkProductCas(int rows, Long orderId, Long productId, String action) {
+        if (rows == 0) {
+            log.error("商品状态流转失败（期望 {}）：orderId={}, productId={}", action, orderId, productId);
+        }
     }
 
     private ProductOrder getOrder(Long id) {

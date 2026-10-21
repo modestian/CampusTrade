@@ -70,6 +70,7 @@ public class WebSocketServer {
             }
             JSONObject obj = JSON.parseObject(userJson);
             this.userId = obj.getLong("id");
+            // 单会话策略：同一用户新连接覆盖旧连接（旧连接不再接收推送）
             ONLINE_SESSIONS.put(this.userId, session);
             log.info("WebSocket 连接建立：用户 {}", this.userId);
         } catch (Exception e) {
@@ -97,9 +98,11 @@ public class WebSocketServer {
     }
 
     @OnClose
-    public void onClose() {
+    public void onClose(Session session) {
         if (userId != null) {
-            ONLINE_SESSIONS.remove(userId);
+            // 精确删除：仅当在线表中登记的仍是本连接时才移除，
+            // 避免多端登录时旧连接关闭触发 remove(userId) 误删新连接
+            ONLINE_SESSIONS.remove(userId, session);
             log.info("WebSocket 连接关闭：用户 {}", userId);
         }
     }
@@ -113,8 +116,14 @@ public class WebSocketServer {
             JSONObject msg = new JSONObject();
             msg.put("type", type);
             msg.put("data", data);
+            String text = msg.toJSONString();
             synchronized (session) {
-                session.getAsyncRemote().sendText(msg.toJSONString());
+                // 异步发送并检查发送结果（失败仅记日志，不影响业务主流程）
+                session.getAsyncRemote().sendText(text, result -> {
+                    if (!result.isOK()) {
+                        log.warn("WebSocket 推送失败：userId={}, type={}", userId, type);
+                    }
+                });
             }
         }
     }
@@ -126,8 +135,13 @@ public class WebSocketServer {
                 JSONObject msg = new JSONObject();
                 msg.put("type", type);
                 msg.put("data", data);
+                String text = msg.toJSONString();
                 synchronized (session) {
-                    session.getAsyncRemote().sendText(msg.toJSONString());
+                    session.getAsyncRemote().sendText(text, result -> {
+                        if (!result.isOK()) {
+                            log.warn("WebSocket 广播失败：type={}", type);
+                        }
+                    });
                 }
             }
         });

@@ -20,6 +20,9 @@ public class RedisConstants {
     /* ---------- 下单锁 ---------- */
     public static final String LOCK_ORDER_KEY = "lock:order:";
 
+    /* ---------- 商品详情缓存重建锁 ---------- */
+    public static final String LOCK_PRODUCT_REBUILD_KEY = "lock:product:rebuild:";
+
     /* ---------- 订单延迟队列 ---------- */
     public static final String DELAY_QUEUE_ORDER_KEY = "delay:queue:order";
 

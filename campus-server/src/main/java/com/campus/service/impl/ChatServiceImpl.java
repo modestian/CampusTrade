@@ -15,6 +15,7 @@ import com.campus.pojo.entity.User;
 import com.campus.pojo.vo.ChatSessionVO;
 import com.campus.service.ChatService;
 import com.campus.websocket.WebSocketServer;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,8 +30,12 @@ import java.util.Map;
 /**
  * 私聊服务实现（WebSocket 实时收发 + 落库）
  */
+@Slf4j
 @Service
 public class ChatServiceImpl implements ChatService {
+
+    /** 私聊内容长度上限（与 tb_chat_message.content VARCHAR(512) 对齐，超长将被拒绝而非静默丢失） */
+    private static final int MAX_CONTENT_LENGTH = 512;
 
     @Resource
     private ChatMessageMapper chatMessageMapper;
@@ -42,6 +47,13 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public void sendMessage(Long fromUserId, Long receiverId, String content) {
         if (fromUserId == null || receiverId == null || StrUtil.isBlank(content)) {
+            return;
+        }
+        // 长度校验：超长会超出列宽导致落库失败，前端只回显本地而对方收不到，必须显式拒绝并回执
+        if (content.length() > MAX_CONTENT_LENGTH) {
+            log.warn("私聊消息超长被拒绝：from={}, length={}", fromUserId, content.length());
+            WebSocketServer.sendToUser(fromUserId, WsMessageType.NOTICE.name(),
+                    "消息发送失败：内容超过 " + MAX_CONTENT_LENGTH + " 字上限");
             return;
         }
         // 不允许给自己发消息

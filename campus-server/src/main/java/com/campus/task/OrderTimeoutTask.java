@@ -33,12 +33,21 @@ public class OrderTimeoutTask {
             return;
         }
         for (String orderIdStr : orderIds) {
+            long orderId;
             try {
-                orderService.cancelTimeoutOrder(Long.valueOf(orderIdStr));
-            } catch (Exception e) {
-                log.error("处理超时订单失败：orderId={}", orderIdStr, e);
-            } finally {
+                orderId = Long.parseLong(orderIdStr);
+            } catch (NumberFormatException e) {
+                // 脏数据：无法解析的成员直接出队，避免永远滞留队头
+                log.error("延迟队列存在非法订单 ID，已丢弃：{}", orderIdStr);
                 stringRedisTemplate.opsForZSet().remove(RedisConstants.DELAY_QUEUE_ORDER_KEY, orderIdStr);
+                continue;
+            }
+            try {
+                orderService.cancelTimeoutOrder(orderId);
+                // 处理成功才出队；失败保留在队列，下一轮重试（避免失败即丢导致订单永不取消）
+                stringRedisTemplate.opsForZSet().remove(RedisConstants.DELAY_QUEUE_ORDER_KEY, orderIdStr);
+            } catch (Exception e) {
+                log.error("处理超时订单失败，将在下一轮重试：orderId={}", orderIdStr, e);
             }
         }
         log.info("超时订单任务处理完成，本轮处理 {} 条", orderIds.size());

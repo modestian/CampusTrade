@@ -86,6 +86,9 @@ public class ProductServiceImpl implements ProductService {
     @Resource
     private RedissonClient redissonClient;
 
+    /** 缓存重建锁等待重试上限（超过后回源数据库兜底，避免无限等待） */
+    private static final int MAX_REBUILD_RETRY = 3;
+
     /* ==================== 买家侧 ==================== */
 
     @Override
@@ -99,6 +102,10 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductDetailVO getDetail(Long id) {
+        return getDetail(id, 0);
+    }
+
+    private ProductDetailVO getDetail(Long id, int retryCount) {
         String key = RedisConstants.CACHE_PRODUCT_KEY + id;
         String cacheJson = stringRedisTemplate.opsForValue().get(key);
 
@@ -111,19 +118,16 @@ public class ProductServiceImpl implements ProductService {
             vo = JSON.parseObject(cacheJson, ProductDetailVO.class);
         } else {
             // 未命中：互斥锁重建（防击穿）
-            RLock lock = redissonClient.getLock(RedisConstants.LOCK_ORDER_KEY + "rebuild:" + id);
+            RLock lock = redissonClient.getLock(RedisConstants.LOCK_PRODUCT_REBUILD_KEY + id);
             try {
                 boolean locked = lock.tryLock(0, 10, TimeUnit.SECONDS);
                 if (!locked) {
-                    // 未拿到锁：短暂等待后重试
-                    Thread.sleep(100);
-                    return getDetail(id);
-                }
-                // 双重检查
-                cacheJson = stringRedisTemplate.opsForValue().get(key);
-                if (cacheJson != null && !cacheJson.isEmpty()) {
-                    vo = JSON.parseObject(cacheJson, ProductDetailVO.class);
-                } else {
+                    if (retryCount < MAX_REBUILD_RETRY) {
+                        // 未拿到锁：短暂等待后重试
+                        Thread.sleep(100);
+                        return getDetail(id, retryCount + 1);
+                    }
+                    // 超过重试上限仍拿不到锁：回源数据库兜底（不再递归，避免无限等待）
                     vo = productMapper.selectProductDetail(id);
                     if (vo == null) {
                         // 空值缓存（防穿透）
@@ -131,9 +135,23 @@ public class ProductServiceImpl implements ProductService {
                                 RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
                         throw new BusinessException(MessageConstant.PRODUCT_NOT_FOUND);
                     }
-                    // 随机 TTL（防雪崩）
-                    long ttl = RedisConstants.CACHE_PRODUCT_TTL + ThreadLocalRandom.current().nextInt(5);
-                    stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(vo), ttl, TimeUnit.MINUTES);
+                } else {
+                    // 双重检查
+                    cacheJson = stringRedisTemplate.opsForValue().get(key);
+                    if (cacheJson != null && !cacheJson.isEmpty()) {
+                        vo = JSON.parseObject(cacheJson, ProductDetailVO.class);
+                    } else {
+                        vo = productMapper.selectProductDetail(id);
+                        if (vo == null) {
+                            // 空值缓存（防穿透）
+                            stringRedisTemplate.opsForValue().set(key, "",
+                                    RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
+                            throw new BusinessException(MessageConstant.PRODUCT_NOT_FOUND);
+                        }
+                        // 随机 TTL（防雪崩）
+                        long ttl = RedisConstants.CACHE_PRODUCT_TTL + ThreadLocalRandom.current().nextInt(5);
+                        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(vo), ttl, TimeUnit.MINUTES);
+                    }
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -190,9 +208,12 @@ public class ProductServiceImpl implements ProductService {
         if (ids != null && !ids.isEmpty()) {
             List<Long> idList = ids.stream().map(Long::valueOf).collect(Collectors.toList());
             List<ProductVO> products = productMapper.selectByIds(idList);
-            // 按热度顺序返回
+            // 按热度顺序返回（过滤非在售商品，避免已售出/下架商品出现在榜单）
             for (Long id : idList) {
-                products.stream().filter(p -> p.getId().equals(id)).findFirst().ifPresent(result::add);
+                products.stream()
+                        .filter(p -> p.getId().equals(id)
+                                && ProductStatus.ON_SALE.getValue().equals(p.getStatus()))
+                        .findFirst().ifPresent(result::add);
             }
             result.forEach(this::fillText);
         }

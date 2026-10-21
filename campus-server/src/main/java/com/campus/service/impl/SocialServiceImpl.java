@@ -64,6 +64,9 @@ public class SocialServiceImpl implements SocialService {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    /** Feed 时间线保留上限：写扩散时裁剪最旧记录，避免 ZSet 无限增长 */
+    private static final long FEED_MAX_SIZE = 500;
+
     /* ==================== 收藏 ==================== */
 
     @Override
@@ -132,18 +135,22 @@ public class SocialServiceImpl implements SocialService {
             throw new BusinessException(MessageConstant.PRODUCT_NOT_FOUND);
         }
         String key = RedisConstants.LIKE_PRODUCT_KEY + productId;
-        Boolean isMember = stringRedisTemplate.opsForSet().isMember(key, userId.toString());
-        if (Boolean.TRUE.equals(isMember)) {
+        // 原子 SADD：返回 0 说明已点赞（含并发重复请求），幂等返回
+        Long added = stringRedisTemplate.opsForSet().add(key, userId.toString());
+        if (added == null || added == 0) {
             return;
         }
-        stringRedisTemplate.opsForSet().add(key, userId.toString());
         try {
             ProductLike like = new ProductLike();
             like.setUserId(userId);
             like.setProductId(productId);
             productLikeMapper.insert(like);
         } catch (Exception e) {
-            log.warn("点赞记录已存在：{}", e.getMessage());
+            // 唯一键冲突（如 Redis 点赞集合丢失后的重复点赞）：
+            // 撤销本次 Redis 标记并按未点赞处理，避免计数虚增
+            stringRedisTemplate.opsForSet().remove(key, userId.toString());
+            log.warn("点赞失败（记录已存在）：userId={}, productId={}", userId, productId);
+            return;
         }
         productMapper.update(null, new LambdaUpdateWrapper<Product>()
                 .setSql("like_count = like_count + 1")
@@ -157,16 +164,16 @@ public class SocialServiceImpl implements SocialService {
     public void unlike(Long productId) {
         Long userId = UserContext.getUserId();
         String key = RedisConstants.LIKE_PRODUCT_KEY + productId;
-        Long removed = stringRedisTemplate.opsForSet().remove(key, userId.toString());
-        if (removed != null && removed > 0) {
-            int deleted = productLikeMapper.delete(new LambdaQueryWrapper<ProductLike>()
-                    .eq(ProductLike::getUserId, userId)
-                    .eq(ProductLike::getProductId, productId));
-            if (deleted > 0) {
-                productMapper.update(null, new LambdaUpdateWrapper<Product>()
-                        .setSql("like_count = GREATEST(like_count - 1, 0)")
-                        .eq(Product::getId, productId));
-            }
+        // 数据库为权威：先删记录，成功后再清理 Redis 标记与计数
+        int deleted = productLikeMapper.delete(new LambdaQueryWrapper<ProductLike>()
+                .eq(ProductLike::getUserId, userId)
+                .eq(ProductLike::getProductId, productId));
+        // 无论 DB 是否有记录都清理 Redis 标记（自愈遗留的不一致标记）
+        stringRedisTemplate.opsForSet().remove(key, userId.toString());
+        if (deleted > 0) {
+            productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                    .setSql("like_count = GREATEST(like_count - 1, 0)")
+                    .eq(Product::getId, productId));
             stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + productId);
         }
     }
@@ -307,8 +314,10 @@ public class SocialServiceImpl implements SocialService {
         }
         long now = System.currentTimeMillis();
         for (Follow follow : follows) {
-            stringRedisTemplate.opsForZSet().add(
-                    RedisConstants.FEED_KEY + follow.getUserId(), productId.toString(), now);
+            String feedKey = RedisConstants.FEED_KEY + follow.getUserId();
+            stringRedisTemplate.opsForZSet().add(feedKey, productId.toString(), now);
+            // 时间线裁剪：只保留最近 FEED_MAX_SIZE 条，避免写扩散下 ZSet 无限增长
+            stringRedisTemplate.opsForZSet().removeRange(feedKey, 0, -(FEED_MAX_SIZE + 1));
         }
     }
 
