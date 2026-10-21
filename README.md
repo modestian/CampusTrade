@@ -1,6 +1,6 @@
 # 校园二手交易平台（CampusTrade）
 
-基于 **Spring Boot + MyBatis-Plus + Redis** 的校园二手交易平台，前后端分离架构，包含 **学生端**（买家侧 / 卖家侧）与 **管理端** 两个端。商品图片统一使用**色块渲染**（`coverColor` / `avatarColor` 存 hex 值），无需图片资源即可完整运行。
+基于 **Spring Boot + MyBatis-Plus + Redis + RabbitMQ** 的校园二手交易平台，前后端分离架构，包含 **学生端**（买家侧 / 卖家侧）与 **管理端** 两个端。商品图片统一使用**色块渲染**（`coverColor` / `avatarColor` 存 hex 值），无需图片资源即可完整运行。
 
 > 项目融合了两个教学项目的核心能力：仿黑马点评的缓存策略 / 分布式锁 / 社交 Feed 流 / 秒杀防超卖，以及仿苍穹外卖的工程分层 / JWT 认证 / 全局异常处理 / 定时任务。
 
@@ -37,6 +37,7 @@
 | 连接池 | Druid | 1.2.1 |
 | 数据库 | MySQL | 8.0 |
 | 缓存 / 分布式 | Redis + Redisson（分布式锁） | 6.x / 3.13.6 |
+| 消息队列 | RabbitMQ（TTL + DLX + Publisher Confirm） | 3.x / 4.x |
 | 认证 | JWT（jjwt）双端令牌 | 0.9.1 |
 | 实时通信 | WebSocket（@ServerEndpoint） | — |
 | 定时任务 | Spring Task | — |
@@ -61,7 +62,8 @@ CampusTrade
 │       │   ├── mapper         # MyBatis-Plus Mapper（含 CAS 防超卖 SQL）
 │       │   ├── interceptor    # 双拦截器：Token 刷新 + 登录校验
 │       │   ├── websocket      # WebSocket 服务（订单提醒 + 私聊）
-│       │   └── task           # 超时订单取消 / 自动确认收货
+│       │   ├── mq             # 可靠发布 / 订单超时消费者
+│       │   └── task           # Outbox 发布 / 自动确认收货
 │       └── resources
 │           ├── application.yml        # 主配置（端口 8082 / JWT / 业务参数）
 │           ├── application-dev.yml    # 开发环境（MySQL / Redis 连接）
@@ -70,7 +72,7 @@ CampusTrade
 │   ├── student                # 学生端 9 个页面（H5 风格，PC 响应式适配）
 │   ├── admin                  # 管理端 2 个页面（ElementUI）
 │   └── static                 # vue / axios / 共享 js / 样式
-├── sql/campus_trade.sql       # 建库建表 + 种子数据（12 张表）
+├── sql/campus_trade.sql       # 建库建表 + 种子数据（含 MQ Outbox）
 └── scripts/api-test.ps1       # 冒烟测试脚本（19 项断言）
 ```
 
@@ -84,6 +86,7 @@ CampusTrade
 - Maven 3.6+
 - MySQL 8.0
 - Redis 6.x（本地安装或 Docker 容器均可）
+- RabbitMQ 3.x / 4.x（推荐 management 镜像）
 
 ### 1. 初始化数据库
 
@@ -91,7 +94,7 @@ CampusTrade
 mysql -uroot -p < sql/campus_trade.sql
 ```
 
-脚本会自动创建独立数据库 `campus_trade`（12 张表）并写入种子数据，**不会影响其他项目的数据库**。
+脚本会自动创建独立数据库 `campus_trade` 并写入种子数据，**不会影响其他项目的数据库**。已有数据库只需单独执行脚本中标记为 `5A. MQ 可靠消息 Outbox` 的 `CREATE TABLE` 段。
 
 ### 2. 启动 Redis
 
@@ -102,7 +105,15 @@ docker run -d --name campus-redis -p 6379:6379 -v campus-redis-data:/data redis:
 
 项目使用 Redis **db2** 分片，与同机其他项目（db0/db1）互不干扰。应用启动时会自动预热社交缓存（关注 / 粉丝 / 点赞 / 热榜）。
 
-### 3. 按需修改配置
+### 3. 启动 RabbitMQ
+
+```bash
+docker run -d --name campus-rabbitmq -p 5672:5672 -p 15672:15672 -v campus-rabbitmq-data:/var/lib/rabbitmq rabbitmq:4-management
+```
+
+管理控制台：http://localhost:15672，开发环境默认账号和密码均为 `guest`。项目使用固定 TTL 队列与 DLX，不依赖延迟消息插件。
+
+### 4. 按需修改配置
 
 `campus-server/src/main/resources/application-dev.yml`：
 
@@ -116,9 +127,16 @@ spring:
     host: localhost
     port: 6379
     database: 2             # 独立分片，勿改为 db0
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
 ```
 
-### 4. 打包并启动
+订单超时默认使用 RabbitMQ；紧急回退 Redis ZSet 时，可将 `campus.order.timeout-strategy` 改为 `redis`。
+
+### 5. 打包并启动
 
 ```bash
 mvn clean package -DskipTests
@@ -128,7 +146,7 @@ java -jar target/campus-server.jar
 
 服务端口 **8082**，前端静态资源由 campus-server 直接托管（`campus.web.base-dir` 指向 `../campus-web`）。
 
-### 5. 访问入口
+### 6. 访问入口
 
 | 入口 | 地址 |
 |---|---|
@@ -155,7 +173,7 @@ java -jar target/campus-server.jar
 | **防超卖** | Redisson 分布式锁 `lock:order:{productId}` + 数据库 CAS（`UPDATE ... WHERE status=1`），双重保障 |
 | **缓存三兄弟** | 空值缓存防穿透 / Redisson 互斥锁重建防击穿 / 随机 TTL 防雪崩 |
 | **唯一订单号** | RedisIdWorker：`yyyyMMdd` + Redis INCR 12 位序列（分布式安全） |
-| **超时订单** | Redis ZSet 延迟队列 `delay:queue:order` + Spring Task 每 10 秒轮询，15 分钟未支付自动取消并回滚商品 |
+| **超时订单** | MySQL Transactional Outbox + RabbitMQ TTL/DLX；Publisher Confirm、手动 ACK、延迟重试与死信队列，消费端 CAS 幂等 |
 | **自动收货** | Spring Task 每 10 分钟扫描，发货满 7 天自动确认收货 |
 | **Feed 流** | 推模式：发布商品审核通过后写入粉丝 ZSet，滚动分页（minTime + offset） |
 | **双端认证** | JWT（学生 token / 管理端 admin-token 双密钥）+ Redis 登录态 + RefreshTokenInterceptor 滑动续期 |
@@ -189,16 +207,17 @@ powershell -ExecutionPolicy Bypass -File scripts/api-test.ps1
 |---|---|
 | MySQL | 独立数据库 `campus_trade`（12 张表） |
 | Redis | 独立容器 `campus-redis`，仅使用 db2 分片 |
+| RabbitMQ | 独立容器 `campus-rabbitmq`，业务队列统一使用 `campus.order.*` 前缀 |
 | 端口 | 8082（不占用 80 / 8080 等常用端口） |
 
 ---
 
 ## 分布式部署（扩展说明）
 
-核心业务已天然支持多实例（登录态 / 锁 / 缓存 / 延迟队列 / 订单号均基于共享 Redis/MySQL），水平扩展时需补充两处改造：
+核心业务已支持多实例下的订单超时竞争消费（RabbitMQ + 状态 CAS）；登录态、锁、缓存和订单号基于共享 Redis/MySQL。水平扩展时仍需补充两处改造：
 
 1. **WebSocket 跨实例推送**：当前在线会话表为单机内存，多实例下需引入 **Redis Pub/Sub 消息总线**——发送时 publish，各实例订阅后检查目标用户是否在本机连接并推送；
-2. **定时任务去重**：`@Scheduled` 任务多实例会重复执行，需用 Redisson 分布式锁选主（或接 XXL-JOB 等调度中心）。
+2. **普通定时任务去重**：自动收货和 Outbox 扫描在多实例会重复执行；业务已通过 CAS/Publisher Confirm 保证安全，但可进一步用 Redisson 锁选主减少重复工作。
 
 部署架构建议：
 
@@ -207,5 +226,6 @@ powershell -ExecutionPolicy Bypass -File scripts/api-test.ps1
             ├─→ campus-server 实例1 :8082 ─┐
             └─→ campus-server 实例2 :8083 ─┤
                                            ├─→ MySQL（共享）
-                                           └─→ Redis（共享）
+                                           ├─→ Redis（共享）
+                                           └─→ RabbitMQ（共享）
 ```

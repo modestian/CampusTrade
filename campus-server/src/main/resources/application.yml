@@ -10,6 +10,15 @@ spring:
     allow-circular-references: true
   jackson:
     default-property-inclusion: non_null
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
 
 mybatis-plus:
   # mapper 配置文件
@@ -44,7 +53,16 @@ campus:
     base-dir: ../campus-web
   # 订单策略
   order:
+    # 超时处理策略：rabbitmq（默认）/ redis（紧急回退）
+    timeout-strategy: rabbitmq
     # 待支付超时（分钟）
     pay-timeout-minutes: 15
     # 发货后自动收货天数
     auto-receive-days: 7
+  mq:
+    outbox:
+      publish-interval-ms: 5000
+      retention-days: 7
+      cleanup-cron: "0 0 3 * * ?"
+    order-timeout:
+      retry-delay-ms: 30000

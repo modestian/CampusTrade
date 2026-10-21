@@ -15,6 +15,8 @@ import com.campus.common.exception.BusinessException;
 import com.campus.common.exception.NoAuthException;
 import com.campus.common.result.PageResult;
 import com.campus.common.utils.RedisIdWorker;
+import com.campus.config.RabbitMqConstants;
+import com.campus.mapper.MqOutboxMapper;
 import com.campus.mapper.OrderMapper;
 import com.campus.mapper.ProductMapper;
 import com.campus.mapper.ReviewMapper;
@@ -23,6 +25,7 @@ import com.campus.pojo.dto.OrderSubmitDTO;
 import com.campus.pojo.dto.RefundHandleDTO;
 import com.campus.pojo.entity.Product;
 import com.campus.pojo.entity.ProductOrder;
+import com.campus.pojo.entity.MqOutbox;
 import com.campus.pojo.entity.Review;
 import com.campus.pojo.entity.User;
 import com.campus.pojo.vo.OrderVO;
@@ -44,11 +47,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
  * 订单服务实现
- * 核心：Redisson 分布式锁 + 商品状态 CAS 双层防超卖；Redis 延迟队列 + Spring Task 超时取消；
+ * 核心：Redisson 分布式锁 + 商品状态 CAS 双层防超卖；Outbox + RabbitMQ 超时取消；
  * 订单状态机全流程 WebSocket 实时通知。
  */
 @Slf4j
@@ -57,6 +61,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Resource
     private OrderMapper orderMapper;
+
+    @Resource
+    private MqOutboxMapper outboxMapper;
 
     @Resource
     private ProductMapper productMapper;
@@ -85,6 +92,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Value("${campus.order.auto-receive-days:7}")
     private long autoReceiveDays;
+
+    @Value("${campus.order.timeout-strategy:rabbitmq}")
+    private String timeoutStrategy;
 
     /* ==================== 交易主流程 ==================== */
 
@@ -132,10 +142,7 @@ public class OrderServiceImpl implements OrderService {
             order.setRemark(dto.getRemark());
             orderMapper.insert(order);
 
-            // 加入延迟队列（score = 过期时间戳，秒）
-            long expireAt = System.currentTimeMillis() / 1000 + payTimeoutMinutes * 60;
-            stringRedisTemplate.opsForZSet().add(RedisConstants.DELAY_QUEUE_ORDER_KEY,
-                    order.getId().toString(), expireAt);
+            enqueueOrderTimeout(order.getId());
             // 删除商品缓存（数据一致性）
             stringRedisTemplate.delete(RedisConstants.CACHE_PRODUCT_KEY + product.getId());
             // 通知卖家：新订单
@@ -453,6 +460,27 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /* ==================== 私有方法 ==================== */
+
+    /**
+     * RabbitMQ 模式下在同一数据库事务内写 Outbox，避免“订单提交成功但消息发送失败”。
+     * Redis 分支仅用于紧急回退和迁移兼容。
+     */
+    private void enqueueOrderTimeout(Long orderId) {
+        if ("redis".equalsIgnoreCase(timeoutStrategy)) {
+            long expireAt = System.currentTimeMillis() / 1000 + payTimeoutMinutes * 60;
+            stringRedisTemplate.opsForZSet().add(RedisConstants.DELAY_QUEUE_ORDER_KEY,
+                    orderId.toString(), expireAt);
+            return;
+        }
+
+        MqOutbox outbox = new MqOutbox();
+        outbox.setEventId(UUID.randomUUID().toString());
+        outbox.setEventType(RabbitMqConstants.EVENT_ORDER_TIMEOUT);
+        outbox.setAggregateId(orderId);
+        outbox.setStatus(MqOutbox.STATUS_PENDING);
+        outbox.setRetryCount(0);
+        outboxMapper.insert(outbox);
+    }
 
     /**
      * 取消订单并回滚商品（买家取消 / 超时取消共用）

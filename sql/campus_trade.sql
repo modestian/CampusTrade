@@ -124,6 +124,28 @@ CREATE TABLE tb_order (
 ) ENGINE = InnoDB COMMENT = '订单表';
 
 -- ------------------------------------------------------------
+-- 5A. MQ 可靠消息 Outbox
+-- 增量部署：可单独执行本段 CREATE TABLE，不需要重建其他业务表
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS tb_mq_outbox (
+    id              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    event_id        VARCHAR(36)   NOT NULL COMMENT '全局事件ID',
+    event_type      VARCHAR(64)   NOT NULL COMMENT '事件类型',
+    aggregate_id    BIGINT       NOT NULL COMMENT '聚合根ID（订单ID）',
+    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0待发送 1已发送',
+    retry_count     INT          NOT NULL DEFAULT 0 COMMENT '发送重试次数',
+    next_retry_time DATETIME     DEFAULT NULL COMMENT '下次重试时间',
+    sent_time       DATETIME     DEFAULT NULL COMMENT 'Broker确认时间',
+    error_message   VARCHAR(512) DEFAULT NULL COMMENT '最近一次发送错误',
+    create_time     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_event_id (event_id),
+    KEY idx_pending_retry (status, next_retry_time),
+    KEY idx_aggregate (aggregate_id)
+) ENGINE = InnoDB COMMENT = 'MQ可靠消息Outbox';
+
+-- ------------------------------------------------------------
 -- 6. 收藏表
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS tb_collect;

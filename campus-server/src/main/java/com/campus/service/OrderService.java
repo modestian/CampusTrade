@@ -49,7 +49,7 @@ public interface OrderService {
 
     /* ---------- 定时任务 ---------- */
 
-    /** 超时未支付订单取消（Spring Task 调用，商品回滚为在售） */
+    /** 超时未支付订单取消（MQ 消费者或 Redis 回退任务调用，商品回滚为在售） */
     void cancelTimeoutOrder(Long orderId);
 
     /** 自动确认收货（发货满 N 天，返回处理数量） */

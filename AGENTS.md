@@ -13,6 +13,7 @@
 |---|---|
 | 框架 | Spring Boot 2.7.3 / MyBatis-Plus 3.4.3 / Druid |
 | 存储 | MySQL 8（`campus_trade` 库）+ Redis 6（db2 分片）+ Redisson 3.13.6 |
+| 消息 | RabbitMQ（订单超时 TTL/DLX + Transactional Outbox） |
 | 认证 | JWT 双端令牌（学生 `token` / 管理 `admin-token`）+ Redis 登录态 |
 | 实时 | WebSocket `/ws/{token}`（订单事件 + 私聊） |
 | 定时 | Spring Task（超时订单取消 / 自动收货） |
@@ -42,6 +43,7 @@ scripts/        api-test.ps1 冒烟测试（19 项断言）
           ├─ RefreshTokenInterceptor（全部路径：解析 token 并滑动续期 Redis 登录态）
           └─ LoginInterceptor（/student/**、/admin/**：登录校验，白名单放行浏览类接口）
        → Controller → Service（缓存/锁/事务）→ Mapper → MySQL/Redis
+                                            → Outbox → RabbitMQ → Consumer
        → Result 统一响应（code=1 成功 / 401 未登录 / 403 无权限）
 ```
 
@@ -54,7 +56,7 @@ scripts/        api-test.ps1 冒烟测试（19 项断言）
 | 防超卖 | `OrderServiceImpl.submit` + `ProductMapper.casOnSaleToTrading` | Redisson 锁 `lock:order:{id}` + DB CAS（`WHERE status=1`），**双重保障，缺一不可** |
 | 缓存三兄弟 | `ProductServiceImpl.getDetail` | 空值缓存防穿透 / Redisson 锁重建防击穿 / 随机 TTL 防雪崩 |
 | 订单号 | `RedisIdWorker` | `yyyyMMdd` + Redis INCR，分布式安全 |
-| 超时取消 | `OrderTimeoutTask` + Redis ZSet `delay:queue:order` | 10 秒轮询，15 分钟未支付自动取消并回滚商品状态 |
+| 超时取消 | `MqOutboxPublishTask` + RabbitMQ TTL/DLX + `OrderTimeoutConsumer` | 订单与 Outbox 同事务；Confirm 后标记发送；手动 ACK、重试、死信、CAS 幂等；可切回 Redis |
 | 订单状态机 | `OrderStatus` 枚举 | 1待支付→2待发货→3待收货→4已完成（5已取消/6退款中/7已退款），流转必须走 CAS |
 | 商品状态机 | `ProductStatus` 枚举 | 0待审核→1在售→2交易中→3已售出（4已下架/5已驳回） |
 | Feed 流 | `SocialServiceImpl` | 推模式：审核通过写粉丝 ZSet `feed:{userId}`，滚动分页（minTime+offset） |
@@ -69,6 +71,7 @@ scripts/        api-test.ps1 冒烟测试（19 项断言）
 # 环境（首次）
 mysql -uroot -p < sql/campus_trade.sql          # 建库 + 种子数据
 docker run -d --name campus-redis -p 6379:6379 -v campus-redis-data:/data redis:6-alpine
+docker run -d --name campus-rabbitmq -p 5672:5672 -p 15672:15672 -v campus-rabbitmq-data:/var/lib/rabbitmq rabbitmq:4-management
 
 # 构建与启动（每次改后端）
 mvn clean package -DskipTests
@@ -84,7 +87,7 @@ powershell -ExecutionPolicy Bypass -File scripts/api-test.ps1
 | 管理端 | http://localhost:8082/admin-ui/login.html |
 | 测试账号 | 学生 `20230001`~`20230003` / 密码 `123456`；管理员 `admin` / `123456` |
 
-> **环境隔离红线**：数据库仅用 `campus_trade`；Redis 仅用 **db2**（勿动 db0/db1）；服务仅用 **8082** 端口。本机存在其他项目（hm-dianping / sky-take-out），**任何命令不得影响它们的库、Redis 分片与端口**。
+> **环境隔离红线**：数据库仅用 `campus_trade`；Redis 仅用 **db2**（勿动 db0/db1）；RabbitMQ 仅用 `campus.order.*` 资源；服务仅用 **8082** 端口。本机存在其他项目（hm-dianping / sky-take-out），**任何命令不得影响它们的库、Redis 分片、MQ 资源与端口**。
 
 ---
 
@@ -186,5 +189,5 @@ powershell -ExecutionPolicy Bypass -File scripts/api-test.ps1
 ### 已知的分布式改造点（扩展时处理）
 
 - `WebSocketServer.ONLINE_SESSIONS` 为单机内存表 → 多实例需引入 Redis Pub/Sub 广播；
-- `@Scheduled` 任务多实例会重复执行 → 需 Redisson 锁选主（`lock:task:*`）；
+- 自动收货与 Outbox 扫描等 `@Scheduled` 任务多实例会重复执行；当前依靠状态 CAS / MQ 幂等保证安全，仍可用 Redisson 锁选主减少重复工作；
 - 前端静态资源多实例部署 → 移交 Nginx 托管并配置负载均衡与 WebSocket `Upgrade` 头转发。
